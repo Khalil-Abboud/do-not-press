@@ -1,138 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-const BUTTONS = [
-    {
-        name: "FINGER BREAKER",
-        buttonText: "DO NOT PRESS",
-        // buttonText: "",
-        durability: 120,
-        pressReward: 0,
-        breakReward: 50,
-        damagePerSecond: 2,
-        colorClass: "red-button",
-        defeatMessage: "LUCKY. THE NEXT ONE HITS BACK.",
-    },
-    {
-        name: "Mouse nightmare",
-        buttonText: "🤨 STILL CLICKING?",
-        // buttonText: "",
-        durability: 500,
-        pressReward: 0,
-        breakReward: 200,
-        damagePerSecond: 4,
-        colorClass: "blue-button",
-        defeatMessage: "STILL CLICKING? YOUR FINGER HAS ISSUES.",
-    },
-    {
-        name: "THE UNPRESSABLE",
-        buttonText: "🫵 YOUR FINGER ASKED FOR THIS",
-        // buttonText: "",
-        durability: 2000,
-        pressReward: 0,
-        breakReward: 1000,
-        damagePerSecond: 8,
-        colorClass: "green-button",
-        defeatMessage: "YOU WON. YOUR FINGER DIDN'T.",
-    },
-];
-
-const SMALL_BUTTONS = [
-    {
-        name: "SMALL BUTTON",
-        durability: 10,
-        pressReward: 0,
-        breakReward: 2,
-    },
-];
-
-const BASE_PRESS_POWER = 1;
-const POWER_PER_LEVEL = 1;
-const BASE_POWER_UPGRADE_COST = 10;
-
-const BASE_FINGER_HEALTH = 5;
-const HEALTH_PER_LEVEL = 5;
-const BASE_HEALTH_UPGRADE_COST = 10;
-const HEAL_ITEM_COST = 15;
-const HEAL_AMOUNT = 10;
-
-const FINGER_DAMAGE_PER_BUTTON = 1;
-const RESTART_COOLDOWN_SECONDS = 3;
-const HEALTH_TICK_MS = 50;
-const STAGE_DAMAGE_PER_SECOND = 1;
-
-const SMALL_BUTTON_PHASE_DURATION = 10;
-const SMALL_BUTTON_SPAWN_INTERVAL_MS = 1500;
-const MAX_ACTIVE_SMALL_BUTTONS = 16;
-const SMALL_BUTTON_BREAK_DURATION_MS = 100;
-
-function playBreakSound(duration = 1) {
-    const audioContext = new AudioContext();
-    const sampleRate = audioContext.sampleRate;
-
-    const audioBuffer = audioContext.createBuffer(
-        1,
-        sampleRate * duration,
-        sampleRate,
-    );
-
-    const soundData = audioBuffer.getChannelData(0);
-
-    for (let i = 0; i < soundData.length; i++) {
-        const progress = i / soundData.length;
-        const fadeOut = Math.pow(1 - progress, 3);
-        const noise = Math.random() * 2 - 1;
-
-        soundData[i] = noise * fadeOut;
-    }
-
-    const soundSource = audioContext.createBufferSource();
-    const filter = audioContext.createBiquadFilter();
-    const volume = audioContext.createGain();
-
-    soundSource.buffer = audioBuffer;
-
-    filter.type = "highpass";
-    filter.frequency.value = 500;
-
-    volume.gain.setValueAtTime(
-        0.25,
-        audioContext.currentTime,
-    );
-
-    volume.gain.exponentialRampToValueAtTime(
-        0.001,
-        audioContext.currentTime + duration,
-    );
-
-    soundSource.connect(filter);
-    filter.connect(volume);
-    volume.connect(audioContext.destination);
-
-    soundSource.start();
-
-    soundSource.addEventListener("ended", () => {
-        audioContext.close();
-    });
-}
-
-function createRandomPosition() {
-    return {
-        x: 12 + Math.random() * 76,
-        y: 15 + Math.random() * 70,
-    };
-}
-
-function createSmallButtonInstance() {
-    const typeIndex = 0;
-    const buttonType = SMALL_BUTTONS[typeIndex];
-
-    return {
-        id: crypto.randomUUID(),
-        typeIndex: typeIndex,
-        durability: buttonType.durability,
-        position: createRandomPosition(),
-        isBreaking: false,
-    };
-}
+import {
+    BUTTONS,
+    SMALL_BUTTONS,
+    POWER_UPGRADE,
+    HEALTH_UPGRADE,
+    REPAIR_KIT,
+    CHAIN_LIGHTNING,
+    RUN_RULES,
+    SMALL_BUTTON_PHASE,
+    SPAWN_SPEED_UPGRADE,
+} from "./data/gameConfig";
+import { playBreakSound } from "./utils/audio"
+import { createSmallButtonInstance } from "./utils/buttonUtils";
+import { findNearestSmallButton, createLightningPoints, createLightningBranches } from "./utils/lightning";
+import LightningEffect from "./components/LightningEffect";
 
 function getSavedNumber(key, defaultValue) {
     const savedValue = localStorage.getItem(key);
@@ -149,6 +30,7 @@ export default function App() {
     const [buttonIndex, setButtonIndex] = useState(0);
     const currentButton = BUTTONS[buttonIndex];
     const [activeSmallButtons, setActiveSmallButtons,] = useState([]);
+    const [lightningEffect, setLightningEffect] = useState(null);
     const [buttonDurability, setButtonDurability] = useState(
         BUTTONS[0].durability,);
 
@@ -159,22 +41,52 @@ export default function App() {
     const [isRunActive, setIsRunActive] = useState(false);
     const [gamePhase, setGamePhase] = useState("waiting");
     const [stageMessage, setStageMessage] = useState("");
-    const [phaseTimeLeft, setPhaseTimeLeft] = useState(SMALL_BUTTON_PHASE_DURATION,);
+    const [phaseTimeLeft, setPhaseTimeLeft] = useState(SMALL_BUTTON_PHASE.durationSeconds,);
     const [restartCooldown, setRestartCooldown] = useState(0);
     const [isButtonBreaking, setIsButtonBreaking] = useState(false);
     const [powerLevel, setPowerLevel] = useState(() =>
         getSavedNumber("powerLevel", 0),);
     const [healthLevel, setHealthLevel] = useState(() =>
         getSavedNumber("healthLevel", 0),);
+    const [spawnSpeedLevel, setSpawnSpeedLevel] = useState(() =>
+        getSavedNumber("spawnSpeedLevel", 0),);
     const [healItemCount, setHealItemCount] = useState(() =>
-        getSavedNumber("healItemCount", 0),
-    );
+        getSavedNumber("healItemCount", 0),);
+    const [hasChainLightning, setHasChainLightning,] = useState(
+        () => getSavedNumber("hasChainLightning", 0,) === 1,);
 
-    const pressPower = BASE_PRESS_POWER + powerLevel * POWER_PER_LEVEL;
-    const powerUpgradeCost = BASE_POWER_UPGRADE_COST * (powerLevel + 1);
+    const healItemCost = REPAIR_KIT.baseCost * 2 ** healItemCount;
 
-    const maxFingerHealth = BASE_FINGER_HEALTH + healthLevel * HEALTH_PER_LEVEL;
-    const healthUpgradeCost = BASE_HEALTH_UPGRADE_COST * (healthLevel + 1);
+    const pressPower = POWER_UPGRADE.basePower + powerLevel * POWER_UPGRADE.powerPerLevel;
+    const powerUpgradeCost = POWER_UPGRADE.baseCost * (powerLevel + 1);
+
+    const maxFingerHealth = HEALTH_UPGRADE.baseHealth + healthLevel * HEALTH_UPGRADE.healthPerLevel;
+    const healthUpgradeCost = HEALTH_UPGRADE.baseCost * (healthLevel + 1);
+
+    const spawnSpeedLevels = SPAWN_SPEED_UPGRADE.levels;
+
+    const currentSpawnSpeed =
+        spawnSpeedLevels[spawnSpeedLevel];
+
+    const spawnIntervalMs =
+        SMALL_BUTTON_PHASE.spawnIntervalMs /
+        currentSpawnSpeed.multiplier;
+
+    const isSpawnSpeedMax =
+        spawnSpeedLevel === spawnSpeedLevels.length - 1;
+
+    const nextSpawnSpeed =
+        isSpawnSpeedMax
+            ? null
+            : spawnSpeedLevels[spawnSpeedLevel + 1];
+
+    const spawnSpeedUpgradeCost =
+        nextSpawnSpeed ? nextSpawnSpeed.cost : 0;
+
+    const nextSpawnSpeedBonus =
+        nextSpawnSpeed
+            ? (nextSpawnSpeed.multiplier - 1) * 100
+            : null;
 
     const musicRef = useRef(null);
 
@@ -198,7 +110,9 @@ export default function App() {
         localStorage.setItem("powerLevel", String(powerLevel));
         localStorage.setItem("healthLevel", String(healthLevel));
         localStorage.setItem("healItemCount", String(healItemCount));
-    }, [energy, powerLevel, healthLevel]);
+        localStorage.setItem("hasChainLightning", hasChainLightning ? "1" : "0",);
+        localStorage.setItem("spawnSpeedLevel", String(spawnSpeedLevel),);
+    }, [energy, powerLevel, healthLevel, healItemCount, hasChainLightning, spawnSpeedLevel]);
 
     useEffect(() => {
         if (
@@ -212,15 +126,15 @@ export default function App() {
             const phaseDamage =
                 gamePhase === "boss"
                     ? currentButton.damagePerSecond
-                    : STAGE_DAMAGE_PER_SECOND;
+                    : RUN_RULES.stageDamagePerSecond;
 
             const damagePerTick =
-                phaseDamage * (HEALTH_TICK_MS / 1000);
+                phaseDamage * (RUN_RULES.healthTickMs / 1000);
 
             setFingerHealth((currentHealth) =>
                 Math.max(0, currentHealth - damagePerTick),
             );
-        }, HEALTH_TICK_MS);
+        }, RUN_RULES.healthTickMs);
 
         return () => {
             clearInterval(timerId);
@@ -240,7 +154,7 @@ export default function App() {
                 (currentButtons) => {
                     if (
                         currentButtons.length >=
-                        MAX_ACTIVE_SMALL_BUTTONS
+                        SMALL_BUTTON_PHASE.maxActiveButtons
                     ) {
                         return currentButtons;
                     }
@@ -251,12 +165,12 @@ export default function App() {
                     ];
                 },
             );
-        }, SMALL_BUTTON_SPAWN_INTERVAL_MS);
+        }, spawnIntervalMs);
 
         return () => {
             clearInterval(spawnTimerId);
         };
-    }, [gamePhase, isRunActive]);
+    }, [gamePhase, isRunActive, spawnIntervalMs]);
 
     useEffect(() => {
         if (!isFingerExhausted || !isRunActive) {
@@ -265,7 +179,7 @@ export default function App() {
 
         setIsRunActive(false);
         setGamePhase("cooldown");
-        setRestartCooldown(RESTART_COOLDOWN_SECONDS);
+        setRestartCooldown(RUN_RULES.restartCooldownSeconds);
     }, [isFingerExhausted, isRunActive]);
 
     useEffect(() => {
@@ -322,6 +236,85 @@ export default function App() {
         }
     }, [isRunActive, gamePhase]);
 
+    function destroySmallButton(button) {
+        if (!button || button.isBreaking) {
+            return;
+        }
+
+        const buttonType =
+            SMALL_BUTTONS[button.typeIndex];
+
+        setButtonsBroken(
+            (currentButtons) => currentButtons + 1,
+        );
+
+        setEnergy(
+            (currentEnergy) =>
+                currentEnergy + buttonType.breakReward,
+        );
+
+        playBreakSound(
+            SMALL_BUTTON_PHASE.breakDurationMs / 1000,
+        );
+
+        setActiveSmallButtons(
+            (currentButtons) =>
+                currentButtons.map((currentButton) => {
+                    if (currentButton.id !== button.id) {
+                        return currentButton;
+                    }
+
+                    return {
+                        ...currentButton,
+                        durability: 0,
+                        isBreaking: true,
+                    };
+                }),
+        );
+
+        setTimeout(() => {
+            setActiveSmallButtons(
+                (currentButtons) =>
+                    currentButtons.filter(
+                        (currentButton) =>
+                            currentButton.id !== button.id,
+                    ),
+            );
+        }, SMALL_BUTTON_PHASE.breakDurationMs);
+    }
+
+    function damageSmallButton(
+        button,
+        damageAmount,
+    ) {
+        if (!button || button.isBreaking) {
+            return;
+        }
+
+        if (button.durability <= damageAmount) {
+            destroySmallButton(button);
+            return;
+        }
+
+        setActiveSmallButtons(
+            (currentButtons) =>
+                currentButtons.map((currentButton) => {
+                    if (currentButton.id !== button.id) {
+                        return currentButton;
+                    }
+
+                    return {
+                        ...currentButton,
+                        durability: Math.max(
+                            0,
+                            currentButton.durability -
+                            damageAmount,
+                        ),
+                    };
+                }),
+        );
+    }
+
     function handleSmallButtonPress(buttonId) {
         const targetButton = activeSmallButtons.find(
             (button) => button.id === buttonId,
@@ -329,6 +322,47 @@ export default function App() {
 
         if (!targetButton || targetButton.isBreaking) {
             return;
+        }
+
+        const nearestButton =
+            hasChainLightning
+                ? findNearestSmallButton(
+                    targetButton,
+                    activeSmallButtons,
+                )
+                : null;
+
+        if (nearestButton) {
+            const effectId = crypto.randomUUID();
+
+            const mainPoints = createLightningPoints(
+                targetButton.position,
+                nearestButton.position,
+            );
+
+            const branches =
+                createLightningBranches(mainPoints);
+
+            setLightningEffect({
+                id: effectId,
+                from: targetButton.position,
+                to: nearestButton.position,
+                points: mainPoints,
+                branches: branches,
+            });
+
+            setTimeout(() => {
+                setLightningEffect((currentEffect) => {
+                    if (
+                        currentEffect &&
+                        currentEffect.id === effectId
+                    ) {
+                        return null;
+                    }
+
+                    return currentEffect;
+                });
+            }, CHAIN_LIGHTNING.durationMs);
         }
 
         const buttonType =
@@ -343,61 +377,21 @@ export default function App() {
                 currentEnergy + buttonType.pressReward,
         );
 
-        if (targetButton.durability <= pressPower) {
-            setButtonsBroken(
-                (currentButtons) => currentButtons + 1,
+        damageSmallButton(
+            targetButton,
+            pressPower,
+        );
+
+        if (nearestButton) {
+            const chainDamage =
+                pressPower * CHAIN_LIGHTNING.damageMultiplier;
+
+            damageSmallButton(
+                nearestButton,
+                chainDamage,
             );
-
-            setEnergy(
-                (currentEnergy) =>
-                    currentEnergy + buttonType.breakReward,
-            );
-
-            playBreakSound(SMALL_BUTTON_BREAK_DURATION_MS / 1000,);
-
-            setActiveSmallButtons(
-                (currentButtons) =>
-                    currentButtons.map((button) => {
-                        if (button.id !== buttonId) {
-                            return button;
-                        }
-
-                        return {
-                            ...button,
-                            durability: 0,
-                            isBreaking: true,
-                        };
-                    }),
-            );
-
-            setTimeout(() => {
-                setActiveSmallButtons(
-                    (currentButtons) =>
-                        currentButtons.filter(
-                            (button) => button.id !== buttonId,
-                        ),
-                );
-            }, SMALL_BUTTON_BREAK_DURATION_MS);
-
-            return;
         }
 
-        setActiveSmallButtons(
-            (currentButtons) =>
-                currentButtons.map((button) => {
-                    if (button.id !== buttonId) {
-                        return button;
-                    }
-
-                    return {
-                        ...button,
-                        durability: Math.max(
-                            0,
-                            button.durability - pressPower,
-                        ),
-                    };
-                }),
-        );
     }
 
     function handlePress() {
@@ -418,9 +412,9 @@ export default function App() {
                 setButtonsBroken((currentButtons) => currentButtons + 1);
                 setEnergy((currentEnergy) => currentEnergy + currentButton.breakReward);
 
-                setFingerHealth((currentHealth) =>
-                    Math.max(0, currentHealth - FINGER_DAMAGE_PER_BUTTON),
-                );
+                // setFingerHealth((currentHealth) =>
+                //     Math.max(0, currentHealth - RUN_RULES.bossBreakDamage),
+                // );
 
                 const nextButtonIndex = Math.min(
                     buttonIndex + 1,
@@ -462,7 +456,7 @@ export default function App() {
         setPresses(0);
         setIsRunActive(true);
         setGamePhase("smallButtons");
-        setPhaseTimeLeft(SMALL_BUTTON_PHASE_DURATION);
+        setPhaseTimeLeft(SMALL_BUTTON_PHASE.durationSeconds);
         setActiveSmallButtons([createSmallButtonInstance(),]);
         setIsButtonBreaking(false);
     }
@@ -473,28 +467,86 @@ export default function App() {
         ]);
 
         setPhaseTimeLeft(
-            SMALL_BUTTON_PHASE_DURATION,
+            SMALL_BUTTON_PHASE.durationSeconds,
         );
 
         setGamePhase("smallButtons");
     }
 
-    function buyHealItem() {
+    function buySpawnSpeedUpgrade() {
         if (
             isRunActive ||
-            energy < HEAL_ITEM_COST ||
-            healItemCount >= 1
+            isSpawnSpeedMax ||
+            energy < spawnSpeedUpgradeCost
         ) {
             return;
         }
 
         setEnergy(
             (currentEnergy) =>
-                currentEnergy - HEAL_ITEM_COST,
+                currentEnergy - spawnSpeedUpgradeCost,
+        );
+
+        setSpawnSpeedLevel(
+            (currentLevel) => currentLevel + 1,
+        );
+    }
+
+    function buyChainLightning() {
+        if (
+            isRunActive ||
+            energy < CHAIN_LIGHTNING.cost ||
+            hasChainLightning
+        ) {
+            return;
+        }
+
+        setEnergy(
+            (currentEnergy) =>
+                currentEnergy -
+                CHAIN_LIGHTNING.cost,
+        );
+
+        setHasChainLightning(true);
+    }
+
+    function buyHealItem() {
+        if (
+            isRunActive ||
+            energy < healItemCost
+        ) {
+            return;
+        }
+
+        setEnergy(
+            (currentEnergy) =>
+                currentEnergy - healItemCost,
         );
 
         setHealItemCount(
             (currentCount) => currentCount + 1,
+        );
+    }
+
+    function useHealItem() {
+        if (
+            !isRunActive ||
+            healItemCount === 0 ||
+            fingerHealth <= 0 ||
+            fingerHealth >= maxFingerHealth
+        ) {
+            return;
+        }
+
+        setFingerHealth((currentHealth) =>
+            Math.min(
+                maxFingerHealth,
+                currentHealth + maxFingerHealth * REPAIR_KIT.healPercentage,
+            ),
+        );
+
+        setHealItemCount(
+            (currentCount) => currentCount - 1,
         );
     }
 
@@ -572,6 +624,32 @@ export default function App() {
                 </div>
 
                 <div className="button-chamber">
+                    {isRunActive && healItemCount > 0 && (
+                        <div className="run-tools">
+                            <button
+                                className="heal-item-button"
+                                type="button"
+                                onClick={useHealItem}
+                                aria-label={`Use repair kit and restore ${REPAIR_KIT.healPercentage * 100}% of maximum health`}
+                                title={`Restore ${REPAIR_KIT.healPercentage * 100}% of maximum health`}
+                                disabled={
+                                    fingerHealth <= 0 ||
+                                    fingerHealth >= maxFingerHealth
+                                }
+                            >
+                                🩹
+
+                                <span
+                                    className="heal-item-count"
+                                    aria-hidden="true"
+                                >
+                                    {healItemCount}
+                                </span>
+                            </button>
+                        </div>
+                    )}
+                    <LightningEffect effect={lightningEffect} />
+
                     {isFingerExhausted && (
                         <button
                             className="start-area"
@@ -705,10 +783,71 @@ export default function App() {
 
                 <div className="upgrades">
                     <section className="upgrade">
+                        <h2>BUTTON SPAWN RATE</h2>
+
+                        <p>
+                            {`Level: ${spawnSpeedLevel} / ${spawnSpeedLevels.length - 1}`}
+                        </p>
+
+                        <p>
+                            {isSpawnSpeedMax
+                                ? "Maximum level reached"
+                                : `Next: +${nextSpawnSpeedBonus}% spawn rate`}
+                        </p>
+
+                        <button
+                            type="button"
+                            onClick={buySpawnSpeedUpgrade}
+                            disabled={
+                                isRunActive ||
+                                isSpawnSpeedMax ||
+                                energy < spawnSpeedUpgradeCost
+                            }
+                        >
+                            {isSpawnSpeedMax
+                                ? "MAX LEVEL"
+                                : `UPGRADE — ${spawnSpeedUpgradeCost}⚡`}
+                        </button>
+                    </section>
+
+                    <section className="upgrade">
+                        <h2>⚡ CHAIN LIGHTNING</h2>
+
+                        <p>
+                            Status:{" "}
+                            {hasChainLightning
+                                ? "UNLOCKED"
+                                : "LOCKED"}
+                        </p>
+
+                        <p>
+                            {hasChainLightning
+                                ? `Effect: ${CHAIN_LIGHTNING.damageMultiplier * 100}% chain damage`
+                                : `Next: Unlock ${CHAIN_LIGHTNING.damageMultiplier * 100}% chain damage`}
+                        </p>
+
+                        <button
+                            type="button"
+                            onClick={buyChainLightning}
+                            disabled={
+                                isRunActive ||
+                                energy < CHAIN_LIGHTNING.cost ||
+                                hasChainLightning
+                            }
+                        >
+                            {hasChainLightning
+                                ? "UNLOCKED"
+                                : `UNLOCK — ${CHAIN_LIGHTNING.cost}⚡`}
+                        </button>
+                    </section>
+
+                    <section className="upgrade">
                         <h2>PRESS POWER</h2>
 
                         <p>Level: {powerLevel}</p>
-                        <p>Damage per press: {pressPower}</p>
+                        <p>
+                            {`Next: ${pressPower} → ${pressPower + POWER_UPGRADE.powerPerLevel} damage`}
+                        </p>
 
                         <button
                             type="button"
@@ -726,7 +865,9 @@ export default function App() {
                         <h2>FINGER HEALTH</h2>
 
                         <p>Level: {healthLevel}</p>
-                        <p>Health per run: {maxFingerHealth}</p>
+                        <p>
+                            {`Next: ${maxFingerHealth} → ${maxFingerHealth + HEALTH_UPGRADE.healthPerLevel} max health`}
+                        </p>
 
                         <button
                             type="button"
@@ -737,6 +878,25 @@ export default function App() {
                             }
                         >
                             UPGRADE — {healthUpgradeCost}⚡
+                        </button>
+                    </section>
+
+                    <section className="upgrade">
+                        <h2>FINGER REPAIR KIT</h2>
+                        <p>Owned: {healItemCount}</p>
+                        <p>
+                            {`Next: +1 kit (restores ${REPAIR_KIT.healPercentage * 100}% HP)`}
+                        </p>
+
+                        <button
+                            type="button"
+                            onClick={buyHealItem}
+                            disabled={
+                                isRunActive ||
+                                energy < healItemCost
+                            }
+                        >
+                            BUY — {healItemCost}⚡
                         </button>
                     </section>
                 </div>
