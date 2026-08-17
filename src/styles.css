@@ -697,3 +697,11 @@ h1 {
         opacity: 0;
     }
 }
+
+.small-button.healing-small-button {
+    background:
+        radial-gradient(circle at 35% 28%,
+            #b7ffcf,
+            #2ed573 30%,
+            #087f3e 75%);
+}

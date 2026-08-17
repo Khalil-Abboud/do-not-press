@@ -1,6 +1,7 @@
 import {
     SMALL_BUTTONS,
     SMALL_BUTTON_STAGE_SCALING,
+    HEALING_BUTTON_UPGRADE,
 } from "../data/gameConfig";
 
 function createRandomPosition() {
@@ -10,8 +11,9 @@ function createRandomPosition() {
     };
 }
 
-function createSmallButtonInstance(stageIndex = 0) {
-    const typeIndex = 0;
+function createSmallButtonInstance(stageIndex = 0, healingButtonLevel = 0) {
+    const healingButtonChance = HEALING_BUTTON_UPGRADE.levels[healingButtonLevel].spawnChance;
+    const typeIndex = Math.random() < healingButtonChance ? HEALING_BUTTON_UPGRADE.buttonTypeIndex : 0;
     const buttonType = SMALL_BUTTONS[typeIndex];
     const stageScaling =
         SMALL_BUTTON_STAGE_SCALING[stageIndex];
@@ -31,6 +33,7 @@ function createSmallButtonInstance(stageIndex = 0) {
         durability: maxDurability,
         maxDurability: maxDurability,
         breakReward: breakReward,
+        healAmount: buttonType.healAmount,
         position: createRandomPosition(),
         isBreaking: false,
     };

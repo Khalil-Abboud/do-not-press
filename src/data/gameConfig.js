@@ -16,9 +16,23 @@ const REPAIR_KIT = {
 };
 
 const CHAIN_LIGHTNING = {
-    cost: 100,
-    damageMultiplier: 0.5,
     durationMs: 180,
+    jumpDelayMs: 60,
+
+    levels: [
+        {
+            cost: 0,
+            damageMultipliers: [],
+        },
+        {
+            cost: 100,
+            damageMultipliers: [0.5],
+        },
+        {
+            cost: 500,
+            damageMultipliers: [0.5, 0.25],
+        },
+    ],
 };
 
 const BUTTONS = [
@@ -73,8 +87,40 @@ const SMALL_BUTTONS = [
         durability: 10,
         pressReward: 0,
         breakReward: 2,
+        healAmount: 0,
+        colorClass: "",
+    },
+    {
+        name: "HEALING BUTTON",
+        durability: 10,
+        pressReward: 0,
+        breakReward: 2,
+        healAmount: 5,
+        colorClass: "healing-small-button",
     },
 ];
+
+const HEALING_BUTTON_UPGRADE = {
+    buttonTypeIndex: 1,
+    levels: [
+        {
+            cost: 0,
+            spawnChance: 0,
+        },
+        {
+            cost: 100,
+            spawnChance: 0.1,
+        },
+        {
+            cost: 300,
+            spawnChance: 0.15,
+        },
+        {
+            cost: 750,
+            spawnChance: 0.2,
+        },
+    ],
+};
 
 const RUN_RULES = {
     // bossBreakDamage: 0,
@@ -125,21 +171,22 @@ const SMALL_BUTTON_STAGE_SCALING = [
         rewardMultiplier: 1,
     },
     {
-        durabilityMultiplier: 5,
+        durabilityMultiplier: 3,
         rewardMultiplier: 3,
     },
     {
-        durabilityMultiplier: 10,
+        durabilityMultiplier: 3,
         rewardMultiplier: 6,
     },
     {
-        durabilityMultiplier: 20,
+        durabilityMultiplier: 12,
         rewardMultiplier: 12,
     },
 ];
 export {
     BUTTONS,
     SMALL_BUTTONS,
+    HEALING_BUTTON_UPGRADE,
     POWER_UPGRADE,
     HEALTH_UPGRADE,
     REPAIR_KIT,

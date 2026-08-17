@@ -34,6 +34,33 @@ function findNearestSmallButton(sourceButton, buttons) {
     return nearestButton;
 }
 
+function findLightningChain(sourceButton, buttons, maxTargets) {
+    const targets = [];
+    const excludedIds = new Set([sourceButton.id]);
+    let currentSource = sourceButton;
+
+    for (let index = 0; index < maxTargets; index++) {
+        const availableButtons = buttons.filter(
+            (button) => !excludedIds.has(button.id),
+        );
+
+        const nearestButton = findNearestSmallButton(
+            currentSource,
+            availableButtons,
+        );
+
+        if (!nearestButton) {
+            break;
+        }
+
+        targets.push(nearestButton);
+        excludedIds.add(nearestButton.id);
+        currentSource = nearestButton;
+    }
+
+    return targets;
+}
+
 function createLightningPoints(from, to) {
     const points = [];
 
@@ -224,7 +251,7 @@ function createLightningBranches(mainPoints) {
 }
 
 export {
-    findNearestSmallButton,
+    findLightningChain,
     createLightningPoints,
     createLightningBranches,
 };

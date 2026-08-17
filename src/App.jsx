@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
     BUTTONS,
     SMALL_BUTTONS,
+    HEALING_BUTTON_UPGRADE,
     POWER_UPGRADE,
     HEALTH_UPGRADE,
     REPAIR_KIT,
@@ -12,7 +13,7 @@ import {
 } from "./data/gameConfig";
 import { playBreakSound } from "./utils/audio"
 import { createSmallButtonInstance } from "./utils/buttonUtils";
-import { findNearestSmallButton, createLightningPoints, createLightningBranches } from "./utils/lightning";
+import { findLightningChain, createLightningPoints, createLightningBranches } from "./utils/lightning";
 import LightningEffect from "./components/LightningEffect";
 
 function getSavedNumber(key, defaultValue) {
@@ -52,8 +53,28 @@ export default function App() {
         getSavedNumber("spawnSpeedLevel", 0),);
     const [healItemCount, setHealItemCount] = useState(() =>
         getSavedNumber("healItemCount", 0),);
-    const [hasChainLightning, setHasChainLightning,] = useState(
-        () => getSavedNumber("hasChainLightning", 0,) === 1,);
+    const [healingButtonLevel, setHealingButtonLevel] = useState(() =>
+        getSavedNumber("healingButtonLevel", 0),);
+    const [chainLightningLevel, setChainLightningLevel] = useState(() => {
+        const savedLevel = getSavedNumber("chainLightningLevel", getSavedNumber("hasChainLightning", 0));
+        return Math.min(Math.max(savedLevel, 0), CHAIN_LIGHTNING.levels.length - 1);
+    });
+
+    const chainLightningLevels = CHAIN_LIGHTNING.levels;
+    const currentChainLightning = chainLightningLevels[chainLightningLevel];
+    const isChainLightningMax = chainLightningLevel === chainLightningLevels.length - 1;
+    const nextChainLightning = isChainLightningMax ? null : chainLightningLevels[chainLightningLevel + 1];
+    const chainLightningUpgradeCost = nextChainLightning ? nextChainLightning.cost : 0;
+    const nextChainJumpIndex = currentChainLightning.damageMultipliers.length;
+    const nextChainJumpDamageMultiplier = nextChainLightning ? nextChainLightning.damageMultipliers[nextChainJumpIndex] ?? 0 : 0;
+    const hasChainLightning = chainLightningLevel > 0;
+
+    const healingButtonLevels = HEALING_BUTTON_UPGRADE.levels;
+    const currentHealingButton = healingButtonLevels[healingButtonLevel];
+    const isHealingButtonMax = healingButtonLevel === healingButtonLevels.length - 1;
+    const nextHealingButton = isHealingButtonMax ? null : healingButtonLevels[healingButtonLevel + 1];
+    const healingButtonUpgradeCost = nextHealingButton ? nextHealingButton.cost : 0;
+    const healingButtonHealAmount = SMALL_BUTTONS[HEALING_BUTTON_UPGRADE.buttonTypeIndex].healAmount;
 
     const healItemCost = REPAIR_KIT.baseCost * 2 ** healItemCount;
 
@@ -112,9 +133,10 @@ export default function App() {
         localStorage.setItem("powerLevel", String(powerLevel));
         localStorage.setItem("healthLevel", String(healthLevel));
         localStorage.setItem("healItemCount", String(healItemCount));
-        localStorage.setItem("hasChainLightning", hasChainLightning ? "1" : "0",);
         localStorage.setItem("spawnSpeedLevel", String(spawnSpeedLevel),);
-    }, [energy, powerLevel, healthLevel, healItemCount, hasChainLightning, spawnSpeedLevel]);
+        localStorage.setItem("chainLightningLevel", String(chainLightningLevel),);
+        localStorage.setItem("healingButtonLevel", String(healingButtonLevel));
+    }, [energy, powerLevel, healthLevel, healItemCount, chainLightningLevel, spawnSpeedLevel, healingButtonLevel,]);
 
     useEffect(() => {
         if (
@@ -163,7 +185,7 @@ export default function App() {
 
                     return [
                         ...currentButtons,
-                        createSmallButtonInstance(buttonIndex),
+                        createSmallButtonInstance(buttonIndex, healingButtonLevel),
                     ];
                 },
             );
@@ -172,7 +194,7 @@ export default function App() {
         return () => {
             clearInterval(spawnTimerId);
         };
-    }, [gamePhase, isRunActive, spawnIntervalMs, buttonIndex,]);
+    }, [gamePhase, isRunActive, spawnIntervalMs, buttonIndex, healingButtonLevel,]);
 
     useEffect(() => {
         if (!isFingerExhausted || !isRunActive) {
@@ -251,6 +273,10 @@ export default function App() {
             (currentEnergy) =>
                 currentEnergy + button.breakReward
         );
+
+        if (button.healAmount > 0) {
+            setFingerHealth((currentHealth) => Math.min(maxFingerHealth, currentHealth + button.healAmount));
+        }
 
         playBreakSound(
             SMALL_BUTTON_PHASE.breakDurationMs / 1000,
@@ -343,40 +369,60 @@ export default function App() {
         };
     }
 
-    function showLightningEffect(
-        fromPosition,
-        toPosition,
-    ) {
+    function showLightningEffect(sourcePosition, targets) {
         const effectId = crypto.randomUUID();
+        let fromPosition = sourcePosition;
 
-        const mainPoints = createLightningPoints(
-            fromPosition,
-            toPosition,
-        );
+        const bolts = targets.map((target, index) => {
+            const toPosition = target.position;
+            const mainPoints = createLightningPoints(fromPosition, toPosition);
+            const branches = createLightningBranches(mainPoints);
 
-        const branches =
-            createLightningBranches(mainPoints);
+            const bolt = {
+                id: `${effectId}-${index}`,
+                points: mainPoints,
+                branches: branches,
+                delayMs: index * CHAIN_LIGHTNING.jumpDelayMs,
+            };
 
-        setLightningEffect({
-            id: effectId,
-            from: fromPosition,
-            to: toPosition,
-            points: mainPoints,
-            branches: branches,
+            fromPosition = toPosition;
+            return bolt;
         });
+
+        setLightningEffect({ id: effectId, bolts: bolts });
+
+        const totalDuration = CHAIN_LIGHTNING.durationMs + (bolts.length - 1) * CHAIN_LIGHTNING.jumpDelayMs;
 
         setTimeout(() => {
             setLightningEffect((currentEffect) => {
-                if (
-                    currentEffect &&
-                    currentEffect.id === effectId
-                ) {
+                if (currentEffect && currentEffect.id === effectId) {
                     return null;
                 }
 
                 return currentEffect;
             });
-        }, CHAIN_LIGHTNING.durationMs);
+        }, totalDuration);
+    }
+
+    function triggerChainLightning(sourceButton) {
+        const damageMultipliers = currentChainLightning.damageMultipliers;
+
+        if (damageMultipliers.length === 0) {
+            return;
+        }
+
+        const targets = findLightningChain(sourceButton, activeSmallButtons, damageMultipliers.length);
+
+        if (targets.length === 0) {
+            return;
+        }
+
+        showLightningEffect(sourceButton.position, targets);
+
+        targets.forEach((target, index) => {
+            const chainDamage = pressPower * damageMultipliers[index];
+            damageSmallButton(target, chainDamage);
+        });
     }
 
     function handleSmallButtonPress(buttonId) {
@@ -388,20 +434,7 @@ export default function App() {
             return;
         }
 
-        const nearestButton =
-            hasChainLightning
-                ? findNearestSmallButton(
-                    targetButton,
-                    activeSmallButtons,
-                )
-                : null;
-
-        if (nearestButton) {
-            showLightningEffect(
-                targetButton.position,
-                nearestButton.position,
-            );
-        }
+        triggerChainLightning(targetButton);
 
         const buttonType =
             SMALL_BUTTONS[targetButton.typeIndex];
@@ -420,16 +453,6 @@ export default function App() {
             pressPower,
         );
 
-        if (nearestButton) {
-            const chainDamage =
-                pressPower * CHAIN_LIGHTNING.damageMultiplier;
-
-            damageSmallButton(
-                nearestButton,
-                chainDamage,
-            );
-        }
-
     }
 
     function handlePress() {
@@ -437,36 +460,12 @@ export default function App() {
             return;
         }
 
-        const bossPosition = getElementCenterPosition(
-            bossButtonRef.current,
-            chamberRef.current,
-        );
+        if (hasChainLightning) {
+            const bossPosition = getElementCenterPosition(bossButtonRef.current, chamberRef.current);
 
-        const nearestButton =
-            hasChainLightning && bossPosition
-                ? findNearestSmallButton(
-                    {
-                        id: "boss",
-                        position: bossPosition,
-                    },
-                    activeSmallButtons,
-                )
-                : null;
-
-        if (nearestButton) {
-            showLightningEffect(
-                bossPosition,
-                nearestButton.position,
-            );
-
-            const chainDamage =
-                pressPower *
-                CHAIN_LIGHTNING.damageMultiplier;
-
-            damageSmallButton(
-                nearestButton,
-                chainDamage,
-            );
+            if (bossPosition) {
+                triggerChainLightning({ id: "boss", position: bossPosition });
+            }
         }
 
         setPresses((currentPresses) => currentPresses + 1);
@@ -527,13 +526,13 @@ export default function App() {
         setIsRunActive(true);
         setGamePhase("smallButtons");
         setPhaseTimeLeft(SMALL_BUTTON_PHASE.durationSeconds);
-        setActiveSmallButtons([createSmallButtonInstance(0),]);
+        setActiveSmallButtons([createSmallButtonInstance(0, healingButtonLevel),]);
         setIsButtonBreaking(false);
     }
 
     function startNextStage() {
         setActiveSmallButtons([
-            createSmallButtonInstance(buttonIndex),
+            createSmallButtonInstance(buttonIndex, healingButtonLevel),
         ]);
 
         setPhaseTimeLeft(
@@ -565,19 +564,24 @@ export default function App() {
     function buyChainLightning() {
         if (
             isRunActive ||
-            energy < CHAIN_LIGHTNING.cost ||
-            hasChainLightning
+            isChainLightningMax ||
+            energy < chainLightningUpgradeCost
         ) {
             return;
         }
 
-        setEnergy(
-            (currentEnergy) =>
-                currentEnergy -
-                CHAIN_LIGHTNING.cost,
-        );
+        setEnergy((currentEnergy) => currentEnergy - chainLightningUpgradeCost);
 
-        setHasChainLightning(true);
+        setChainLightningLevel((currentLevel) => currentLevel + 1);
+    }
+
+    function buyHealingButtonUpgrade() {
+        if (isRunActive || isHealingButtonMax || energy < healingButtonUpgradeCost) {
+            return;
+        }
+
+        setEnergy((currentEnergy) => currentEnergy - healingButtonUpgradeCost);
+        setHealingButtonLevel((currentLevel) => currentLevel + 1);
     }
 
     function buyHealItem() {
@@ -784,8 +788,8 @@ export default function App() {
                                         </div>
 
                                         <button
-                                            className={`small-button ${smallButton.isBreaking ?
-                                                "is-breaking" : ""}`}
+                                            className={`small-button ${buttonType.colorClass} ${smallButton.isBreaking ?
+                                                 "is-breaking" : ""}`}
                                             type="button"
                                             disabled={smallButton.isBreaking}
                                             aria-label={buttonType.name}
@@ -918,16 +922,13 @@ export default function App() {
                         <h2>⚡ CHAIN LIGHTNING</h2>
 
                         <p>
-                            Status:{" "}
-                            {hasChainLightning
-                                ? "UNLOCKED"
-                                : "LOCKED"}
+                            {`Level: ${chainLightningLevel} / ${chainLightningLevels.length - 1}`}
                         </p>
 
                         <p>
-                            {hasChainLightning
-                                ? `Effect: ${CHAIN_LIGHTNING.damageMultiplier * 100}% chain damage`
-                                : `Next: Unlock ${CHAIN_LIGHTNING.damageMultiplier * 100}% chain damage`}
+                            {isChainLightningMax
+                                ? "Maximum level reached"
+                                : `Next: Jump ${nextChainJumpIndex + 1} deals ${nextChainJumpDamageMultiplier * 100}% damage`}
                         </p>
 
                         <button
@@ -935,13 +936,39 @@ export default function App() {
                             onClick={buyChainLightning}
                             disabled={
                                 isRunActive ||
-                                energy < CHAIN_LIGHTNING.cost ||
-                                hasChainLightning
+                                isChainLightningMax ||
+                                energy < chainLightningUpgradeCost
                             }
                         >
-                            {hasChainLightning
-                                ? "UNLOCKED"
-                                : `UNLOCK — ${CHAIN_LIGHTNING.cost}⚡`}
+                            {isChainLightningMax
+                                ? "MAX LEVEL"
+                                : chainLightningLevel === 0
+                                    ? `UNLOCK — ${chainLightningUpgradeCost}⚡`
+                                    : `UPGRADE — ${chainLightningUpgradeCost}⚡`}
+                        </button>
+                    </section>
+
+                    <section className="upgrade">
+                        <h2>💚 HEALING BUTTONS</h2>
+
+                        <p>{`Level: ${healingButtonLevel} / ${healingButtonLevels.length - 1}`}</p>
+
+                        <p>
+                            {isHealingButtonMax
+                                ? `${currentHealingButton.spawnChance * 100}% spawn chance · +${healingButtonHealAmount} HP`
+                                : `Next: ${nextHealingButton.spawnChance * 100}% spawn chance · +${healingButtonHealAmount} HP`}
+                        </p>
+
+                        <button
+                            type="button"
+                            onClick={buyHealingButtonUpgrade}
+                            disabled={isRunActive || isHealingButtonMax || energy < healingButtonUpgradeCost}
+                        >
+                            {isHealingButtonMax
+                                ? "MAX LEVEL"
+                                : healingButtonLevel === 0
+                                    ? `UNLOCK — ${healingButtonUpgradeCost}⚡`
+                                    : `UPGRADE — ${healingButtonUpgradeCost}⚡`}
                         </button>
                     </section>
 
