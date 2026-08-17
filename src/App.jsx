@@ -89,6 +89,8 @@ export default function App() {
             : null;
 
     const musicRef = useRef(null);
+    const chamberRef = useRef(null);
+    const bossButtonRef = useRef(null);
 
     const isFingerExhausted = fingerHealth === 0;
 
@@ -312,6 +314,71 @@ export default function App() {
         );
     }
 
+    function getElementCenterPosition(element, container) {
+        if (!element || !container) {
+            return null;
+        }
+
+        const elementRect = element.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+
+        if (
+            containerRect.width === 0 ||
+            containerRect.height === 0
+        ) {
+            return null;
+        }
+
+        return {
+            x:
+                ((elementRect.left + elementRect.width / 2 -
+                    containerRect.left) /
+                    containerRect.width) *
+                100,
+            y:
+                ((elementRect.top + elementRect.height / 2 -
+                    containerRect.top) /
+                    containerRect.height) *
+                100,
+        };
+    }
+
+    function showLightningEffect(
+        fromPosition,
+        toPosition,
+    ) {
+        const effectId = crypto.randomUUID();
+
+        const mainPoints = createLightningPoints(
+            fromPosition,
+            toPosition,
+        );
+
+        const branches =
+            createLightningBranches(mainPoints);
+
+        setLightningEffect({
+            id: effectId,
+            from: fromPosition,
+            to: toPosition,
+            points: mainPoints,
+            branches: branches,
+        });
+
+        setTimeout(() => {
+            setLightningEffect((currentEffect) => {
+                if (
+                    currentEffect &&
+                    currentEffect.id === effectId
+                ) {
+                    return null;
+                }
+
+                return currentEffect;
+            });
+        }, CHAIN_LIGHTNING.durationMs);
+    }
+
     function handleSmallButtonPress(buttonId) {
         const targetButton = activeSmallButtons.find(
             (button) => button.id === buttonId,
@@ -330,36 +397,10 @@ export default function App() {
                 : null;
 
         if (nearestButton) {
-            const effectId = crypto.randomUUID();
-
-            const mainPoints = createLightningPoints(
+            showLightningEffect(
                 targetButton.position,
                 nearestButton.position,
             );
-
-            const branches =
-                createLightningBranches(mainPoints);
-
-            setLightningEffect({
-                id: effectId,
-                from: targetButton.position,
-                to: nearestButton.position,
-                points: mainPoints,
-                branches: branches,
-            });
-
-            setTimeout(() => {
-                setLightningEffect((currentEffect) => {
-                    if (
-                        currentEffect &&
-                        currentEffect.id === effectId
-                    ) {
-                        return null;
-                    }
-
-                    return currentEffect;
-                });
-            }, CHAIN_LIGHTNING.durationMs);
         }
 
         const buttonType =
@@ -394,6 +435,38 @@ export default function App() {
     function handlePress() {
         if (isButtonBreaking) {
             return;
+        }
+
+        const bossPosition = getElementCenterPosition(
+            bossButtonRef.current,
+            chamberRef.current,
+        );
+
+        const nearestButton =
+            hasChainLightning && bossPosition
+                ? findNearestSmallButton(
+                    {
+                        id: "boss",
+                        position: bossPosition,
+                    },
+                    activeSmallButtons,
+                )
+                : null;
+
+        if (nearestButton) {
+            showLightningEffect(
+                bossPosition,
+                nearestButton.position,
+            );
+
+            const chainDamage =
+                pressPower *
+                CHAIN_LIGHTNING.damageMultiplier;
+
+            damageSmallButton(
+                nearestButton,
+                chainDamage,
+            );
         }
 
         setPresses((currentPresses) => currentPresses + 1);
@@ -620,7 +693,10 @@ export default function App() {
                     </div>
                 </div>
 
-                <div className="button-chamber">
+                <div
+                    ref={chamberRef}
+                    className="button-chamber"
+                >
                     {isRunActive && healItemCount > 0 && (
                         <div className="run-tools">
                             <button
@@ -762,6 +838,7 @@ export default function App() {
                             </div>
 
                             <button
+                                ref={bossButtonRef}
                                 className={`main-button play-button ${currentButton.colorClass
                                     } ${isButtonBreaking ? "is-breaking" : ""
                                     }`}

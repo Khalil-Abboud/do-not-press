@@ -5,7 +5,7 @@ const POWER_UPGRADE = {
 };
 
 const HEALTH_UPGRADE = {
-    baseHealth: 5,
+    baseHealth: 10,
     healthPerLevel: 5,
     baseCost: 10,
 };
@@ -102,19 +102,19 @@ const SPAWN_SPEED_UPGRADE = {
         },
         {
             multiplier: 2,
-            cost: 100,
+            cost: 50,
         },
         {
             multiplier: 3,
-            cost: 200,
+            cost: 100,
         },
         {
             multiplier: 5,
-            cost: 500,
+            cost: 250,
         },
         {
             multiplier: 8,
-            cost: 1000,
+            cost: 500,
         },
     ],
 };
