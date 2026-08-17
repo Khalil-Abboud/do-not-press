@@ -55,6 +55,16 @@ const BUTTONS = [
         colorClass: "green-button",
         defeatMessage: "YOU WON. YOUR FINGER DIDN'T.",
     },
+    {
+        name: "THE GOLDEN TROLL",
+        buttonText: "😏 YOU CAME THIS FAR FOR A BUTTON?",
+        durability: 10000,
+        pressReward: 0,
+        breakReward: 2500,
+        damagePerSecond: 16,
+        colorClass: "yellow-button",
+        defeatMessage: "CONGRATS. YOU DEFEATED BASIC JUDGMENT.",
+    },
 ];
 
 const SMALL_BUTTONS = [
@@ -109,6 +119,24 @@ const SPAWN_SPEED_UPGRADE = {
     ],
 };
 
+const SMALL_BUTTON_STAGE_SCALING = [
+    {
+        durabilityMultiplier: 1,
+        rewardMultiplier: 1,
+    },
+    {
+        durabilityMultiplier: 5,
+        rewardMultiplier: 3,
+    },
+    {
+        durabilityMultiplier: 10,
+        rewardMultiplier: 6,
+    },
+    {
+        durabilityMultiplier: 20,
+        rewardMultiplier: 12,
+    },
+];
 export {
     BUTTONS,
     SMALL_BUTTONS,
@@ -119,4 +147,5 @@ export {
     RUN_RULES,
     SMALL_BUTTON_PHASE,
     SPAWN_SPEED_UPGRADE,
+    SMALL_BUTTON_STAGE_SCALING,
 };

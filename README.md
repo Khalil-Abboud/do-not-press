@@ -2,7 +2,7 @@
 
 **Do Not Press** is a small meme-inspired clicker/tycoon game built for the CashFactories developer test assignment. The player is punished for pressing buttons, earns Press Energy by destroying them, buys persistent upgrades, and gradually becomes strong enough to survive increasingly dangerous boss stages.
 
-> Project status: playable frontend prototype. The core loop, three boss configurations, two persistent upgrades, local saving, responsive UI, sound effects, and background music are implemented. Additional upgrades, events, final victory flow, screenshots, and backend persistence are planned.
+> Project status: playable frontend MVP. The complete run loop, four boss stages, stage-scaled targets, five purchasable progression options, persistent local saving, responsive UI, sound effects, and background music are implemented. Random events, a dedicated final victory flow, screenshots, and backend persistence are planned.
 
 ## Live demo
 
@@ -27,16 +27,21 @@ The intended experience is intentionally punishing: the first runs focus on reso
 
 - Randomly positioned small buttons with individual durability bars.
 - Continuous spawning during both the preparation and boss phases.
-- Three configured boss tiers with different durability, damage, rewards, colors, and messages.
+- Four configured boss tiers with different durability, damage, rewards, colors, and meme-themed messages.
+- Stage scaling that increases small-button durability and rewards after each defeated boss.
 - Continuous finger-health drain instead of one large damage tick per second.
 - Press Power upgrade that increases damage per click.
 - Finger Health upgrade that increases health available for every run.
+- Button Spawn Rate upgrade with multiple levels and a maximum level.
+- One-time Chain Lightning unlock that damages the nearest additional small target and renders a short SVG lightning effect.
+- Consumable Finger Repair Kits that restore 50% of maximum health during an active run.
 - Increasing upgrade prices based on the purchased level.
 - Press Energy that remains available between runs.
-- Persistent `energy`, `powerLevel`, and `healthLevel` values after page reloads.
+- Persistent currency, upgrade levels, unlocked mechanics, and repair-kit inventory after page reloads.
 - Three-second recovery cooldown after losing a run.
 - Stage-complete intermissions between bosses.
 - Button press, shake, fade, and destruction feedback.
+- Pointer Capture input handling, so a press remains reliable even while the button moves during its pressed animation.
 - Generated break sound using the Web Audio API.
 - Looping background music during active gameplay, paused during intermissions and cooldowns.
 - Responsive desktop/mobile layout.
@@ -51,21 +56,23 @@ The UI is controlled by a small phase state machine:
 - `waiting`: the player has not started yet.
 - `smallButtons`: small targets spawn while health drains.
 - `boss`: the boss appears and small targets continue spawning.
-- `stageComplete`: damage and music pause while the player continues to the next stage.
+- `stageComplete`: damage and music pause while the player chooses to continue to the next stage.
 - `cooldown`: the run has ended and restart is temporarily disabled.
 
 Temporary run data, such as current health, active targets, button durability, and phase, is held in React state. A new run resets this temporary state but does not remove permanent progression.
 
 ### Economy
 
-Press Energy is currently earned by destroying small buttons and bosses. It can be spent only when a run is not active.
+Press Energy is currently earned by destroying small buttons and bosses. It can be spent only when a run is not active. Small targets become tougher and more rewarding in later stages, while bosses act as progression gates and provide larger milestone rewards.
 
-- Press Power starts at `1` and gains `+1` per level.
-- Finger Health starts at `5` and gains `+5` per level.
-- Both upgrade prices currently follow a simple linear rule: `base cost × (current level + 1)`.
-- Bosses provide larger milestone rewards, while small buttons provide the repeatable income used between boss attempts.
+- **Press Power** gains `+1` damage per purchased level.
+- **Finger Health** increases maximum health for every future run.
+- **Button Spawn Rate** has several configured tiers that shorten the interval between targets.
+- **Chain Lightning** is a one-time unlock that deals 50% of the original press damage to the nearest valid small target.
+- **Finger Repair Kit** is a consumable that restores 50% of maximum health; its price rises with the number currently owned.
+- Power and health upgrade prices currently follow a simple linear rule: `base cost × (current level + 1)`.
 
-The numbers are still being play-tested. The current goal is to make early progress difficult without turning repeated attempts into idle grinding.
+All balance values are centralized in `src/data/gameConfig.js` and are still being play-tested. Some current health, spawn-rate, damage, and reward values are deliberately exaggerated for rapid development testing. The intended final balance should make early progress difficult without turning repeated attempts into idle grinding.
 
 ## Data storage
 
@@ -76,6 +83,9 @@ Saved keys:
 - `energy`
 - `powerLevel`
 - `healthLevel`
+- `spawnSpeedLevel`
+- `hasChainLightning`
+- `healItemCount`
 
 The save belongs to one browser and one website origin. It is not synchronized between devices, browsers, localhost, or different Netlify deploy URLs.
 
@@ -100,7 +110,15 @@ do-not-press/
 ├── public/
 │   └── audio/             # Background music files
 ├── src/
-│   ├── App.jsx            # Game state, rules, actions, and UI
+│   ├── components/
+│   │   └── LightningEffect.jsx # SVG chain-lightning presentation
+│   ├── data/
+│   │   └── gameConfig.js  # Bosses, upgrades, rewards, and balance values
+│   ├── utils/
+│   │   ├── audio.js       # Web Audio sound helpers
+│   │   ├── buttonUtils.js # Target creation and stage scaling
+│   │   └── lightning.js   # Target selection and lightning geometry
+│   ├── App.jsx            # Game state, phase transitions, actions, and UI
 │   ├── main.jsx           # React entry point
 │   └── styles.css         # Layout, responsive styles, and animations
 ├── index.html
@@ -108,7 +126,7 @@ do-not-press/
 └── vite.config.js
 ```
 
-The prototype currently keeps most game logic in `App.jsx` so the complete loop remains easy to follow. As the number of upgrades and events grows, configuration and reusable UI components will be separated into focused files.
+The main state machine and player actions remain in `App.jsx`, while balance configuration, reusable effects, audio helpers, target creation, and lightning calculations have been separated into focused files. This keeps the current loop readable without introducing a large architecture too early.
 
 ## Running locally
 
@@ -168,10 +186,10 @@ Changes were applied incrementally, reviewed manually, and tested in the browser
 
 ### Phase 1 - Complete the required game content
 
-- Expand from two to at least five upgrades.
-- Add at least two upgrades that change mechanics rather than only numbers, for example an auto-clicking bot and a temporary shield or multi-target press.
+- Add at least one more permanent mechanic-changing upgrade, such as an auto-clicking bot or temporary shield, so the upgrade requirement does not depend on counting the consumable Repair Kit.
+- Refine the existing Spawn Rate, Chain Lightning, Press Power, Finger Health, and Repair Kit economy.
 - Add at least three meme-themed events: a reward, a crisis/penalty, and a surprising stage modifier.
-- Add a proper final victory state instead of repeating the last configured boss.
+- Add a proper final victory state after the fourth boss instead of repeating the last configured stage.
 - Add a visible save reset action with confirmation.
 - Continue economy balancing using short play-test sessions.
 
@@ -179,6 +197,7 @@ Changes were applied incrementally, reviewed manually, and tested in the browser
 
 - Add more small-button types with different behavior, rewards, and risk.
 - Add clearer stage identities, boss introductions, and progression feedback.
+- Replace temporary development balance values with play-tested values.
 - Improve mobile interaction and accessibility.
 - Add screenshots under `docs/screenshots/` before final submission.
 - Add focused tests for economy calculations, upgrades, persistence, and phase transitions.
@@ -214,9 +233,9 @@ The core game should remain playable without payment, and monetization should no
 
 ## Current limitations
 
-- Only two of the required five upgrades are implemented.
+- The shop currently has four permanent progression systems plus one consumable item; another permanent mechanic-changing upgrade is still planned.
 - Random events are not implemented yet.
-- The final boss does not yet lead to a dedicated victory screen.
+- The fourth boss does not yet lead to a dedicated victory screen.
 - Persistence is local to one browser and has no reset button yet.
 - There is no backend, database, account synchronization, or admin interface yet.
 - Automated tests and repository screenshots still need to be added.

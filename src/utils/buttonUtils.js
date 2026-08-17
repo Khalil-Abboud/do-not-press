@@ -1,4 +1,7 @@
-import { SMALL_BUTTONS } from "../data/gameConfig";
+import {
+    SMALL_BUTTONS,
+    SMALL_BUTTON_STAGE_SCALING,
+} from "../data/gameConfig";
 
 function createRandomPosition() {
     return {
@@ -7,14 +10,27 @@ function createRandomPosition() {
     };
 }
 
-function createSmallButtonInstance() {
+function createSmallButtonInstance(stageIndex = 0) {
     const typeIndex = 0;
     const buttonType = SMALL_BUTTONS[typeIndex];
+    const stageScaling =
+        SMALL_BUTTON_STAGE_SCALING[stageIndex];
+
+    const maxDurability =
+        buttonType.durability *
+        stageScaling.durabilityMultiplier;
+
+    const breakReward =
+        buttonType.breakReward *
+        stageScaling.rewardMultiplier;
 
     return {
         id: crypto.randomUUID(),
         typeIndex: typeIndex,
-        durability: buttonType.durability,
+        stageIndex: stageIndex,
+        durability: maxDurability,
+        maxDurability: maxDurability,
+        breakReward: breakReward,
         position: createRandomPosition(),
         isBreaking: false,
     };

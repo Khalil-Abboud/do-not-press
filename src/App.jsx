@@ -161,7 +161,7 @@ export default function App() {
 
                     return [
                         ...currentButtons,
-                        createSmallButtonInstance(),
+                        createSmallButtonInstance(buttonIndex),
                     ];
                 },
             );
@@ -170,7 +170,7 @@ export default function App() {
         return () => {
             clearInterval(spawnTimerId);
         };
-    }, [gamePhase, isRunActive, spawnIntervalMs]);
+    }, [gamePhase, isRunActive, spawnIntervalMs, buttonIndex,]);
 
     useEffect(() => {
         if (!isFingerExhausted || !isRunActive) {
@@ -241,16 +241,13 @@ export default function App() {
             return;
         }
 
-        const buttonType =
-            SMALL_BUTTONS[button.typeIndex];
-
         setButtonsBroken(
             (currentButtons) => currentButtons + 1,
         );
 
         setEnergy(
             (currentEnergy) =>
-                currentEnergy + buttonType.breakReward,
+                currentEnergy + button.breakReward
         );
 
         playBreakSound(
@@ -457,13 +454,13 @@ export default function App() {
         setIsRunActive(true);
         setGamePhase("smallButtons");
         setPhaseTimeLeft(SMALL_BUTTON_PHASE.durationSeconds);
-        setActiveSmallButtons([createSmallButtonInstance(),]);
+        setActiveSmallButtons([createSmallButtonInstance(0),]);
         setIsButtonBreaking(false);
     }
 
     function startNextStage() {
         setActiveSmallButtons([
-            createSmallButtonInstance(),
+            createSmallButtonInstance(buttonIndex),
         ]);
 
         setPhaseTimeLeft(
@@ -704,7 +701,7 @@ export default function App() {
                                                 style={{
                                                     width: `${(
                                                         smallButton.durability /
-                                                        buttonType.durability
+                                                        smallButton.maxDurability
                                                     ) * 100}%`,
                                                 }}
                                             />
@@ -716,9 +713,23 @@ export default function App() {
                                             type="button"
                                             disabled={smallButton.isBreaking}
                                             aria-label={buttonType.name}
-                                            onClick={() =>
-                                                handleSmallButtonPress(smallButton.id)
-                                            }
+                                            onPointerDown={(event) => {
+                                                if (event.button === 0) {
+                                                    event.currentTarget.setPointerCapture(
+                                                        event.pointerId,
+                                                    );
+                                                }
+                                            }}
+                                            onPointerUp={(event) => {
+                                                if (event.button === 0) {
+                                                    handleSmallButtonPress(smallButton.id);
+                                                }
+                                            }}
+                                            onClick={(event) => {
+                                                if (event.detail === 0) {
+                                                    handleSmallButtonPress(smallButton.id);
+                                                }
+                                            }}
                                         />
                                     </div>
                                 );
@@ -755,7 +766,23 @@ export default function App() {
                                     } ${isButtonBreaking ? "is-breaking" : ""
                                     }`}
                                 type="button"
-                                onClick={handlePress}
+                                onPointerDown={(event) => {
+                                    if (event.button === 0) {
+                                        event.currentTarget.setPointerCapture(
+                                            event.pointerId,
+                                        );
+                                    }
+                                }}
+                                onPointerUp={(event) => {
+                                    if (event.button === 0) {
+                                        handlePress();
+                                    }
+                                }}
+                                onClick={(event) => {
+                                    if (event.detail === 0) {
+                                        handlePress();
+                                    }
+                                }}
                                 disabled={isButtonBreaking}
                             >
                                 {isButtonBreaking ? "CRACK!" : currentButton.buttonText}
