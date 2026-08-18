@@ -42,7 +42,7 @@ const BUTTONS = [
         // buttonText: "",
         durability: 120,
         pressReward: 0,
-        breakReward: 50,
+        breakReward: 25,
         damagePerSecond: 2,
         colorClass: "red-button",
         defeatMessage: "LUCKY. THE NEXT ONE HITS BACK.",
@@ -53,7 +53,7 @@ const BUTTONS = [
         // buttonText: "",
         durability: 500,
         pressReward: 0,
-        breakReward: 200,
+        breakReward: 100,
         damagePerSecond: 4,
         colorClass: "blue-button",
         defeatMessage: "STILL CLICKING? YOUR FINGER HAS ISSUES.",
@@ -64,7 +64,7 @@ const BUTTONS = [
         // buttonText: "",
         durability: 2000,
         pressReward: 0,
-        breakReward: 1000,
+        breakReward: 500,
         damagePerSecond: 8,
         colorClass: "green-button",
         defeatMessage: "YOU WON. YOUR FINGER DIDN'T.",
@@ -74,7 +74,7 @@ const BUTTONS = [
         buttonText: "😏 YOU CAME THIS FAR FOR A BUTTON?",
         durability: 10000,
         pressReward: 0,
-        breakReward: 2500,
+        breakReward: 1000,
         damagePerSecond: 16,
         colorClass: "yellow-button",
         defeatMessage: "CONGRATS. YOU DEFEATED BASIC JUDGMENT.",
@@ -136,6 +136,69 @@ const SMALL_BUTTON_PHASE = {
     breakDurationMs: 100,
 };
 
+const GOLDEN_RUSH = {
+    durationSeconds: 10,
+    spawnIntervalMs: 250,
+    buttonLifetimeMs: 1200,
+    breakDurationMs: 250,
+    maxActiveButtons: 6,
+    rewardMultiplier: 3,
+};
+
+const RED_LIGHT_EVENT = {
+    durationSeconds: 30,
+    caughtDurationMs: 4000,
+    warningDurationMs: 250,
+    greenDurationRangeMs: [1800, 2800],
+    redDurationRangeMs: [1200, 1800],
+    appearances: [
+        {
+            requiredTotalPresses: 200,
+            targetHits: 50,
+            reward: 150,
+        },
+        {
+            requiredTotalPresses: 500,
+            targetHits: 65,
+            reward: 350,
+        },
+        {
+            requiredTotalPresses: 1000,
+            targetHits: 80,
+            reward: 750,
+        },
+    ],
+};
+
+const POLARITY_EVENT = {
+    buttonBreakStaggerMs: 60,
+    breakDurationMs: 300,
+    resultDelayMs: 800,
+    attempts: [
+        {
+            cost: 100,
+            buttonCount: 6,
+            waves: 2,
+            waveDurationSeconds: 7,
+            rewardPerButton: 20,
+        },
+        {
+            cost: 300,
+            buttonCount: 8,
+            waves: 3,
+            waveDurationSeconds: 6,
+            rewardPerButton: 30,
+        },
+        {
+            cost: 800,
+            buttonCount: 10,
+            waves: 3,
+            waveDurationSeconds: 5,
+            rewardPerButton: 60,
+        },
+    ],
+};
+
 const SPAWN_SPEED_UPGRADE = {
     levels: [
         {
@@ -193,6 +256,9 @@ export {
     CHAIN_LIGHTNING,
     RUN_RULES,
     SMALL_BUTTON_PHASE,
+    GOLDEN_RUSH,
+    RED_LIGHT_EVENT,
+    POLARITY_EVENT,
     SPAWN_SPEED_UPGRADE,
     SMALL_BUTTON_STAGE_SCALING,
 };

@@ -2,6 +2,7 @@ import {
     SMALL_BUTTONS,
     SMALL_BUTTON_STAGE_SCALING,
     HEALING_BUTTON_UPGRADE,
+    GOLDEN_RUSH,
 } from "../data/gameConfig";
 
 function createRandomPosition() {
@@ -39,4 +40,19 @@ function createSmallButtonInstance(stageIndex = 0, healingButtonLevel = 0) {
     };
 }
 
-export { createSmallButtonInstance };
+function createGoldenButtonInstance(stageIndex = 0) {
+    const normalButtonType = SMALL_BUTTONS[0];
+    const stageScaling = SMALL_BUTTON_STAGE_SCALING[stageIndex];
+    const breakReward = normalButtonType.breakReward * stageScaling.rewardMultiplier * GOLDEN_RUSH.rewardMultiplier;
+
+    return {
+        id: crypto.randomUUID(),
+        stageIndex: stageIndex,
+        breakReward: breakReward,
+        position: createRandomPosition(),
+        createdAt: Date.now(),
+        isBreaking: false,
+    };
+}
+
+export { createSmallButtonInstance, createGoldenButtonInstance };
