@@ -109,6 +109,7 @@ export default function App() {
     const [energy, setEnergy] = useState(initialGameSave.progress.energy);
     const [fingerHealth, setFingerHealth] = useState(0);
     const [isRunActive, setIsRunActive] = useState(false);
+    const [isMusicMuted, setIsMusicMuted] = useState(false);
     const [gamePhase, setGamePhase] = useState(getInitialGamePhase());
     const [introStep, setIntroStep] = useState("temptation");
     const [introResistanceSeconds, setIntroResistanceSeconds] = useState(null);
@@ -117,6 +118,7 @@ export default function App() {
     const [goldenRushTimeLeft, setGoldenRushTimeLeft] = useState(0);
     const [restartCooldown, setRestartCooldown] = useState(0);
     const [isButtonBreaking, setIsButtonBreaking] = useState(false);
+    const [isExitConfirmationOpen, setIsExitConfirmationOpen] = useState(false);
     const [powerLevel, setPowerLevel] = useState(initialGameSave.upgrades.powerLevel);
     const [healthLevel, setHealthLevel] = useState(initialGameSave.upgrades.healthLevel);
     const [spawnSpeedLevel, setSpawnSpeedLevel] = useState(initialGameSave.upgrades.spawnSpeedLevel);
@@ -180,6 +182,7 @@ export default function App() {
     const currentPolarityTotalReward = currentPolarityAttempt ? currentPolarityAttempt.buttonCount * currentPolarityAttempt.waves * currentPolarityAttempt.rewardPerButton : 0;
     const isEventScreenOpen = ["intro", "goldenRushIntro", "goldenRush", "redLightIntro", "redLightEvent", "redLightResult", "polarityIntro", "polarityEvent", "polarityResult", "demoEnding"].includes(gamePhase);
     const isStageSelectionLocked = isRunActive || isEventScreenOpen;
+    const canAbortRun = isRunActive && fingerHealth > 0 && !isButtonBreaking && (gamePhase === "smallButtons" || gamePhase === "boss");
     const displayedStageIndex = isRunActive ? buttonIndex : selectedStartingStage;
 
     const healingButtonLevels = HEALING_BUTTON_UPGRADE.levels;
@@ -443,6 +446,15 @@ export default function App() {
             clearTimeout(timeoutId);
         };
     }, [restartCooldown]);
+
+    useEffect(() => {
+        if (!isExitConfirmationOpen) {
+            return;
+        }
+
+        const timeoutId = setTimeout(() => setIsExitConfirmationOpen(false), 3000);
+        return () => clearTimeout(timeoutId);
+    }, [isExitConfirmationOpen]);
 
     useEffect(() => {
         if (gamePhase !== "smallButtons") {
@@ -1221,7 +1233,21 @@ export default function App() {
         setActiveSmallButtons([]);
         setGoldenButtons([]);
         setEndingChoiceTimeLeft(0);
+        setIsExitConfirmationOpen(false);
         setGamePhase("waiting");
+    }
+
+    function handleRunExit() {
+        if (!canAbortRun) {
+            return;
+        }
+
+        if (!isExitConfirmationOpen) {
+            setIsExitConfirmationOpen(true);
+            return;
+        }
+
+        returnToStageSelection();
     }
 
     function startNewRun() {
@@ -1569,6 +1595,7 @@ export default function App() {
             <audio
                 ref={musicRef}
                 src="/audio/monkeys-spinning-monkeys.mp3"
+                muted={isMusicMuted}
                 loop
                 preload="auto"
             />
@@ -1704,10 +1731,35 @@ export default function App() {
                 <section ref={gamePanelRef} className="game-panel">
                     <div className="meter">
                         <div className="meter-label">
-                            <span>FINGER HEALTH</span>
-                            <strong>
-                                {fingerHealth.toFixed(1)} / {maxFingerHealth}
-                            </strong>
+                            <div className="health-label-actions">
+                                {canAbortRun && (
+                                    <button
+                                        className={`abort-run-button ${isExitConfirmationOpen ? "is-confirming" : ""}`}
+                                        type="button"
+                                        onClick={handleRunExit}
+                                    >
+                                        {isExitConfirmationOpen ? "CONFIRM EXIT" : "ABORT RUN"}
+                                    </button>
+                                )}
+
+                                <button
+                                    className={`music-toggle-button ${isMusicMuted ? "is-muted" : ""}`}
+                                    type="button"
+                                    onClick={() => setIsMusicMuted((currentValue) => !currentValue)}
+                                    aria-pressed={isMusicMuted}
+                                    title={isMusicMuted ? "Unmute background music" : "Mute background music"}
+                                >
+                                    {isMusicMuted ? "🔇 MUTED" : "🔊 MUSIC"}
+                                </button>
+                            </div>
+
+                            <div className="health-value">
+                                <span>FINGER HEALTH</span>
+
+                                <strong>
+                                    {fingerHealth.toFixed(1)} / {maxFingerHealth}
+                                </strong>
+                            </div>
                         </div>
 
                         <div className="meter-track">

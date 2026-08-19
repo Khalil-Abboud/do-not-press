@@ -486,6 +486,84 @@ h1 {
     color: #a5a7ad;
 }
 
+.health-label-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.health-value {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.music-toggle-button {
+    min-height: 30px;
+    padding: 5px 9px;
+    border: 1px solid #555d68;
+    border-radius: 6px;
+    background: linear-gradient(180deg, #242a32, #191d23);
+    color: #d8dbe0;
+    cursor: pointer;
+    font-family: monospace;
+    font-size: 9px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    transition: border-color 120ms, background 120ms, color 120ms, transform 80ms;
+}
+
+.music-toggle-button:hover {
+    border-color: #ffc857;
+    color: #fff4d4;
+}
+
+.music-toggle-button:active {
+    transform: translateY(1px);
+}
+
+.music-toggle-button.is-muted {
+    border-color: #70434a;
+    background: #281b1e;
+    color: #c9a9ad;
+}
+
+.abort-run-button {
+    min-height: 30px;
+    padding: 6px 11px;
+    border: 1px solid #87424a;
+    border-radius: 6px;
+    background: linear-gradient(180deg, #352126, #25171a);
+    box-shadow: 0 3px 0 #10090b;
+    color: #f1c9cd;
+    cursor: pointer;
+    font-family: monospace;
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 0.8px;
+    white-space: nowrap;
+    transition: border-color 120ms, background 120ms, box-shadow 120ms, color 120ms, transform 80ms;
+}
+
+.abort-run-button:hover {
+    border-color: #ff6671;
+    background: linear-gradient(180deg, #4b252c, #32191e);
+    color: #fff1f2;
+}
+
+.abort-run-button:active {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 #10090b;
+}
+
+.abort-run-button.is-confirming {
+    border-color: #ff5964;
+    background: linear-gradient(180deg, #9d2632, #641821);
+    box-shadow: 0 3px 0 #29080d, 0 0 12px rgb(239 51 64 / 24%);
+    color: white;
+}
+
 .meter-track {
     height: 12px;
     overflow: hidden;
@@ -1625,6 +1703,28 @@ h1 {
         gap: 8px;
         font-size: 11px;
         letter-spacing: 0.5px;
+    }
+
+    .health-label-actions {
+        gap: 5px;
+    }
+
+    .health-value {
+        gap: 5px;
+    }
+
+    .music-toggle-button {
+        min-height: 28px;
+        padding: 4px 6px;
+        font-size: 8px;
+        letter-spacing: 0;
+    }
+
+    .abort-run-button {
+        min-height: 28px;
+        padding: 5px 7px;
+        font-size: 9px;
+        letter-spacing: 0.3px;
     }
 
     .button-chamber {

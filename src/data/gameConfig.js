@@ -71,7 +71,7 @@ const AUTO_FINGER = {
         },
         {
             cost: 6000,
-            damageMultiplier: 1.2,
+            damageMultiplier: 1.25,
             attackIntervalMs: 400,
         },
     ],
@@ -113,6 +113,12 @@ const FIREBALL_DROP = {
             damageMultiplier: 1.75,
             attackIntervalMs: 2000,
             laneWidthPercent: 20,
+        },
+        {
+            cost: 8000,
+            damageMultiplier: 2.25,
+            attackIntervalMs: 1250,
+            laneWidthPercent: 24,
         },
     ],
 };
