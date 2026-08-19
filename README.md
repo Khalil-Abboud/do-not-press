@@ -26,9 +26,9 @@ The final boss stage with regular targets, healing buttons, Auto Finger, Chain L
 
 ### Events
 
-| Golden Rush | Polarity Rush |
-| --- | --- |
-| ![Golden Rush bonus event](docs/screenshots/event1.png) | ![Polarity Rush event](docs/screenshots/event%202.png) |
+| Golden Rush | Red Light / Green Light | Polarity Rush |
+| --- | --- | --- |
+| ![Golden Rush bonus event](docs/screenshots/event1.png) | ![Red Light and Green Light verification event](docs/screenshots/event3.png) | ![Polarity Rush event](docs/screenshots/event%202.png) |
 
 ### Mobile portrait layout
 
