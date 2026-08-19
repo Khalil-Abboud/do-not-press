@@ -132,7 +132,7 @@ const RUN_RULES = {
 const SMALL_BUTTON_PHASE = {
     durationSeconds: 10,
     spawnIntervalMs: 2000,
-    maxActiveButtons: 16,
+    maxActiveButtons: 24,
     breakDurationMs: 100,
 };
 
@@ -235,15 +235,15 @@ const SMALL_BUTTON_STAGE_SCALING = [
     },
     {
         durabilityMultiplier: 3,
-        rewardMultiplier: 3,
+        rewardMultiplier: 2,
     },
     {
-        durabilityMultiplier: 3,
-        rewardMultiplier: 6,
+        durabilityMultiplier: 6,
+        rewardMultiplier: 4,
     },
     {
         durabilityMultiplier: 12,
-        rewardMultiplier: 12,
+        rewardMultiplier: 8,
     },
 ];
 export {

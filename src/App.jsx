@@ -54,12 +54,51 @@ function getSavedPolarityEventIndex() {
     return savedEventIndex >= 0 && savedEventIndex < POLARITY_EVENT.attempts.length ? savedEventIndex : -1;
 }
 
+function getSavedStageIndex() {
+    const savedStage = localStorage.getItem("highestUnlockedStage");
+
+    if (savedStage !== null) {
+        return Math.min(Math.max(Number(savedStage), 0), BUTTONS.length - 1);
+    }
+
+    const completedRushes = getSavedArray("completedGoldenRushes");
+    const inferredStage = completedRushes.reduce((highestStage, defeatedBossIndex) => Math.max(highestStage, defeatedBossIndex + 1), 0);
+    return Math.min(inferredStage, BUTTONS.length - 1);
+}
+
 const EVENT_INTRO_DELAY_SECONDS = 2;
+
+function RunData({ className, currentScore, bestScore, totalPresses }) {
+    return (
+        <section className={`run-data ${className}`} aria-label="Stage score and total presses">
+            <div className="stage-score">
+                <span>CURRENT SCORE</span>
+                <strong>{currentScore}</strong>
+            </div>
+
+            <div className="run-data-secondary">
+                <div>
+                    <span>BEST SCORE</span>
+                    <strong>{bestScore}</strong>
+                </div>
+
+                <div>
+                    <span>TOTAL PRESSES</span>
+                    <strong>{totalPresses}</strong>
+                </div>
+            </div>
+        </section>
+    );
+}
 
 export default function App() {
     const [presses, setPresses] = useState(0);
     const [totalManualPresses, setTotalManualPresses] = useState(() => getSavedNumber("totalManualPresses", 0));
+    const [runScore, setRunScore] = useState(0);
+    const [bestScore, setBestScore] = useState(() => getSavedNumber("bestScore", 0));
     const [buttonIndex, setButtonIndex] = useState(0);
+    const [highestUnlockedStage, setHighestUnlockedStage] = useState(() => getSavedStageIndex());
+    const [selectedStartingStage, setSelectedStartingStage] = useState(() => getSavedStageIndex());
     const currentButton = BUTTONS[buttonIndex];
     const [activeSmallButtons, setActiveSmallButtons,] = useState([]);
     const [goldenButtons, setGoldenButtons] = useState([]);
@@ -68,7 +107,6 @@ export default function App() {
     const [buttonDurability, setButtonDurability] = useState(
         BUTTONS[0].durability,);
 
-    const [buttonsBroken, setButtonsBroken] = useState(0);
     const [energy, setEnergy] = useState(() =>
         getSavedNumber("energy", 0),);
     const [fingerHealth, setFingerHealth] = useState(0);
@@ -134,6 +172,8 @@ export default function App() {
     const nextPolarityTotalReward = nextPolarityAttempt ? nextPolarityAttempt.buttonCount * nextPolarityAttempt.waves * nextPolarityAttempt.rewardPerButton : 0;
     const currentPolarityTotalReward = currentPolarityAttempt ? currentPolarityAttempt.buttonCount * currentPolarityAttempt.waves * currentPolarityAttempt.rewardPerButton : 0;
     const isEventScreenOpen = ["goldenRushIntro", "goldenRush", "redLightIntro", "redLightEvent", "redLightResult", "polarityIntro", "polarityEvent", "polarityResult"].includes(gamePhase);
+    const isStageSelectionLocked = isRunActive || isEventScreenOpen || gamePhase === "victory";
+    const displayedStageIndex = isRunActive ? buttonIndex : selectedStartingStage;
 
     const healingButtonLevels = HEALING_BUTTON_UPGRADE.levels;
     const currentHealingButton = healingButtonLevels[healingButtonLevel];
@@ -211,7 +251,15 @@ export default function App() {
         localStorage.setItem("completedRedLightEvents", JSON.stringify(completedRedLightEvents));
         localStorage.setItem("polarityEventsPlayed", String(polarityEventsPlayed));
         localStorage.setItem("pendingPolarityEventIndex", String(pendingPolarityEventIndex));
-    }, [energy, powerLevel, healthLevel, healItemCount, chainLightningLevel, spawnSpeedLevel, healingButtonLevel, completedGoldenRushes, totalManualPresses, completedRedLightEvents, polarityEventsPlayed, pendingPolarityEventIndex]);
+        localStorage.setItem("highestUnlockedStage", String(highestUnlockedStage));
+        localStorage.setItem("bestScore", String(bestScore));
+    }, [energy, powerLevel, healthLevel, healItemCount, chainLightningLevel, spawnSpeedLevel, healingButtonLevel, completedGoldenRushes, totalManualPresses, completedRedLightEvents, polarityEventsPlayed, pendingPolarityEventIndex, highestUnlockedStage, bestScore]);
+
+    useEffect(() => {
+        if (runScore > bestScore) {
+            setBestScore(runScore);
+        }
+    }, [runScore, bestScore]);
 
     useEffect(() => {
         if (
@@ -311,7 +359,8 @@ export default function App() {
         setIsRunActive(false);
         setGamePhase("cooldown");
         setRestartCooldown(RUN_RULES.restartCooldownSeconds);
-    }, [isFingerExhausted, isRunActive]);
+        setSelectedStartingStage(highestUnlockedStage);
+    }, [isFingerExhausted, isRunActive, highestUnlockedStage]);
 
     useEffect(() => {
         if (restartCooldown === 0) {
@@ -476,19 +525,17 @@ export default function App() {
         setRewardPopups((currentPopups) => currentPopups.filter((popup) => popup.id !== popupId));
     }
 
+    function awardRunEnergy(amount) {
+        setEnergy((currentEnergy) => currentEnergy + amount);
+        setRunScore((currentScore) => currentScore + amount);
+    }
+
     function destroySmallButton(button) {
         if (!button || button.isBreaking) {
             return;
         }
 
-        setButtonsBroken(
-            (currentButtons) => currentButtons + 1,
-        );
-
-        setEnergy(
-            (currentEnergy) =>
-                currentEnergy + button.breakReward
-        );
+        awardRunEnergy(button.breakReward);
 
         showRewardPopup(button.breakReward, button.position);
 
@@ -664,10 +711,7 @@ export default function App() {
 
         recordManualPress();
 
-        setEnergy(
-            (currentEnergy) =>
-                currentEnergy + buttonType.pressReward,
-        );
+        awardRunEnergy(buttonType.pressReward);
 
         damageSmallButton(
             targetButton,
@@ -681,8 +725,7 @@ export default function App() {
             return;
         }
 
-        setButtonsBroken((currentButtons) => currentButtons + 1);
-        setEnergy((currentEnergy) => currentEnergy + button.breakReward);
+        awardRunEnergy(button.breakReward);
         showRewardPopup(button.breakReward, button.position);
         playBreakSound(GOLDEN_RUSH.breakDurationMs / 1000);
 
@@ -711,16 +754,29 @@ export default function App() {
     }
 
     function completeCurrentStage() {
-        const nextButtonIndex = Math.min(buttonIndex + 1, BUTTONS.length - 1);
-
-        setButtonIndex(nextButtonIndex);
-        setButtonDurability(BUTTONS[nextButtonIndex].durability);
         setStageMessage(currentButton.defeatMessage);
         setActiveSmallButtons([]);
         setGoldenButtons([]);
         setGoldenRushTimeLeft(0);
-        setGamePhase("stageComplete");
         setIsButtonBreaking(false);
+
+        if (buttonIndex === BUTTONS.length - 1) {
+            setIsRunActive(false);
+            setGamePhase("victory");
+            return;
+        }
+
+        const nextButtonIndex = buttonIndex + 1;
+        setButtonIndex(nextButtonIndex);
+        setButtonDurability(BUTTONS[nextButtonIndex].durability);
+        setGamePhase("stageComplete");
+    }
+
+    function unlockNextStage() {
+        const unlockedStage = Math.min(buttonIndex + 1, BUTTONS.length - 1);
+        const newHighestStage = Math.max(highestUnlockedStage, unlockedStage);
+        setHighestUnlockedStage(newHighestStage);
+        setSelectedStartingStage(newHighestStage);
     }
 
     function startGoldenRush() {
@@ -865,7 +921,6 @@ export default function App() {
         });
 
         setPolarityButtons(solvedButtons.map((button) => ({ ...button, isBreaking: true })));
-        setButtonsBroken((currentButtons) => currentButtons + solvedButtons.length);
 
         solvedButtons.forEach((button, index) => {
             setTimeout(() => {
@@ -936,7 +991,7 @@ export default function App() {
 
         recordManualPress();
 
-        setEnergy((currentEnergy) => currentEnergy + currentButton.pressReward);
+        awardRunEnergy(currentButton.pressReward);
 
         if (buttonDurability <= pressPower) {
             const destroyedBossPosition = bossPosition || getElementCenterPosition(bossButtonRef.current, chamberRef.current);
@@ -944,11 +999,11 @@ export default function App() {
             setButtonDurability(0);
             playBreakSound();
             setIsButtonBreaking(true);
-            setEnergy((currentEnergy) => currentEnergy + currentButton.breakReward);
+            awardRunEnergy(currentButton.breakReward);
             showRewardPopup(currentButton.breakReward, destroyedBossPosition);
 
             setTimeout(() => {
-                setButtonsBroken((currentButtons) => currentButtons + 1);
+                unlockNextStage();
 
                 // setFingerHealth((currentHealth) =>
                 //     Math.max(0, currentHealth - RUN_RULES.bossBreakDamage),
@@ -968,6 +1023,7 @@ export default function App() {
     }
 
     function startNormalRun() {
+        const startingStage = selectedStartingStage;
         const music = musicRef.current;
 
         if (music) {
@@ -977,19 +1033,36 @@ export default function App() {
         }
 
         setFingerHealth(maxFingerHealth);
-        setButtonIndex(0);
-        setButtonDurability(BUTTONS[0].durability);
-        setButtonsBroken(0);
+        setButtonIndex(startingStage);
+        setButtonDurability(BUTTONS[startingStage].durability);
         setPresses(0);
+        setRunScore(0);
         setIsRunActive(true);
         setGamePhase("smallButtons");
         setPhaseTimeLeft(SMALL_BUTTON_PHASE.durationSeconds);
-        setActiveSmallButtons([createSmallButtonInstance(0, healingButtonLevel),]);
+        setActiveSmallButtons([createSmallButtonInstance(startingStage, healingButtonLevel),]);
         setGoldenButtons([]);
         setGoldenRushTimeLeft(0);
         setIsButtonBreaking(false);
         setRedLightEventIndex(null);
         setRedLightResult(null);
+    }
+
+    function selectStartingStage(stageIndex) {
+        if (isStageSelectionLocked || stageIndex > highestUnlockedStage) {
+            return;
+        }
+
+        setSelectedStartingStage(stageIndex);
+    }
+
+    function returnToStageSelection() {
+        setIsRunActive(false);
+        setFingerHealth(0);
+        setSelectedStartingStage(highestUnlockedStage);
+        setActiveSmallButtons([]);
+        setGoldenButtons([]);
+        setGamePhase("waiting");
     }
 
     function startNewRun() {
@@ -1143,17 +1216,63 @@ export default function App() {
                     <h1>DO NOT PRESS</h1>
                     <p className="warning">You have been warned.</p>
                 </div>
-
-                <div className="energy">
-                    <span>⚡</span>
-                    <div>
-                        <strong>{energy}</strong>
-                        <small>PRESS ENERGY</small>
-                    </div>
-                </div>
             </header>
 
-            <section className="game-panel">
+            <div className="game-layout">
+                <aside className="game-sidebar">
+                    <div className="energy sidebar-energy" aria-label={`${energy} press energy`}>
+                        <span>⚡</span>
+                        <div>
+                            <strong>{energy}</strong>
+                            <small>PRESS ENERGY</small>
+                        </div>
+                    </div>
+
+                    <RunData
+                        className="desktop-run-data"
+                        currentScore={runScore}
+                        bestScore={bestScore}
+                        totalPresses={totalManualPresses}
+                    />
+
+                    <div className="stage-selector">
+                        <div className="stage-selector-header">
+                            <p className="small-label">RUN ENTRY POINT</p>
+                            <h2>STAGE SELECT</h2>
+                            <p>Choose where the next run begins.</p>
+                        </div>
+
+                        <div className="stage-list">
+                            {BUTTONS.map((stage, stageIndex) => {
+                                const isUnlocked = stageIndex <= highestUnlockedStage;
+                                const isSelected = stageIndex === displayedStageIndex;
+
+                                return (
+                                    <button
+                                        key={stage.name}
+                                        className={`stage-option ${isSelected ? "is-selected" : ""} ${!isUnlocked ? "is-locked" : ""}`}
+                                        type="button"
+                                        onClick={() => selectStartingStage(stageIndex)}
+                                        disabled={!isUnlocked || isStageSelectionLocked}
+                                        aria-pressed={isSelected}
+                                    >
+                                        <span className="stage-option-number">STAGE {String(stageIndex + 1).padStart(2, "0")}</span>
+                                        <strong>{isUnlocked ? stage.name : "???"}</strong>
+                                        <small>
+                                            {!isUnlocked
+                                                ? `DEFEAT STAGE ${stageIndex} BOSS TO UNLOCK`
+                                                : isSelected
+                                                    ? isRunActive ? "CURRENT STAGE" : "STARTING POINT"
+                                                    : stageIndex === highestUnlockedStage ? "LATEST UNLOCK" : "UNLOCKED"}
+                                        </small>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </aside>
+
+                <section className="game-panel">
                 <div className="meter">
                     <div className="meter-label">
                         <span>FINGER HEALTH</span>
@@ -1171,6 +1290,13 @@ export default function App() {
                         />
                     </div>
                 </div>
+
+                <RunData
+                    className="mobile-run-data"
+                    currentScore={runScore}
+                    bestScore={bestScore}
+                    totalPresses={totalManualPresses}
+                />
 
                 <div
                     ref={chamberRef}
@@ -1466,6 +1592,16 @@ export default function App() {
                             </button>
                         )}
 
+                    {gamePhase === "victory" && (
+                        <button className="start-area victory-screen" type="button" onClick={returnToStageSelection}>
+                            <span className="start-message victory-message">
+                                <small className="secret-event-label">ALL STAGES CLEARED</small>
+                                <strong className="victory-title">🏆 YOU DEFEATED EVERY BUTTON</strong>
+                                <small className="continue-hint">CLICK TO RETURN TO STAGE SELECT</small>
+                            </span>
+                        </button>
+                    )}
+
                     {!isFingerExhausted && isRunActive && activeSmallButtons.length > 0 && (
                         <div className="small-button-phase">
                             {activeSmallButtons.map((smallButton) => {
@@ -1576,23 +1712,6 @@ export default function App() {
                             </button>
                         </>
                     )}
-                </div>
-
-                <div className="statistics">
-                    <div>
-                        <span>BUTTONS BROKEN</span>
-                        <strong>{buttonsBroken}</strong>
-                    </div>
-
-                    <div>
-                        <span>MANUAL PRESSES</span>
-                        <strong>{presses}</strong>
-                    </div>
-
-                    <div>
-                        <span>RUN STATUS</span>
-                        <strong>{isRunActive ? "ACTIVE" : "STOPPED"}</strong>
-                    </div>
                 </div>
 
                 <div className="upgrades">
@@ -1756,7 +1875,8 @@ export default function App() {
                     </section>
                 </div>
 
-            </section>
+                </section>
+            </div>
         </main >
 
     );

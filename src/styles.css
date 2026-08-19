@@ -6,6 +6,7 @@ body {
     margin: 0;
     min-width: 320px;
     min-height: 100vh;
+    overflow-x: hidden;
     background:
         radial-gradient(circle at top, #291116 0%, transparent 45%),
         #090b0f;
@@ -20,9 +21,117 @@ button {
 }
 
 .game {
-    width: min(1100px, calc(100% - 32px));
+    width: min(1400px, calc(100% - 32px));
     margin: 0 auto;
     padding: 40px 0;
+}
+
+.game-layout {
+    display: grid;
+    grid-template-columns: 230px minmax(0, 1fr);
+    align-items: start;
+    gap: 18px;
+}
+
+.game-sidebar {
+    position: sticky;
+    top: 18px;
+    display: grid;
+    min-width: 0;
+    gap: 12px;
+}
+
+.stage-selector {
+    padding: 18px;
+    border: 1px solid #343943;
+    border-radius: 14px;
+    background: #14171c;
+    box-shadow: 0 20px 45px rgb(0 0 0 / 32%);
+}
+
+.stage-selector-header h2 {
+    margin: 0;
+    color: #ffc857;
+    font-family: monospace;
+    font-size: 17px;
+    letter-spacing: 1px;
+}
+
+.stage-selector-header>p:last-child {
+    margin: 8px 0 16px;
+    color: #90949c;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.stage-list {
+    display: grid;
+    gap: 10px;
+}
+
+.stage-option {
+    display: flex;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #3d424c;
+    border-radius: 8px;
+    background: #1b1f26;
+    color: #f4f1ea;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 120ms, background 120ms, transform 80ms;
+}
+
+.stage-option:not(:disabled):hover {
+    border-color: #ffc857;
+    background: #242a33;
+}
+
+.stage-option:not(:disabled):active {
+    transform: translateY(2px);
+}
+
+.stage-option-number {
+    color: #8f96a2;
+    font-family: monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+}
+
+.stage-option strong {
+    font-size: 12px;
+    line-height: 1.3;
+}
+
+.stage-option small {
+    color: #8f96a2;
+    font-family: monospace;
+    font-size: 9px;
+    line-height: 1.35;
+}
+
+.stage-option.is-selected {
+    border-color: #ffc857;
+    background: linear-gradient(135deg, #302718, #1c2027);
+    box-shadow: inset 3px 0 0 #ffc857, 0 0 18px rgb(255 200 87 / 8%);
+}
+
+.stage-option.is-selected small {
+    color: #ffc857;
+}
+
+.stage-option.is-locked {
+    border-style: dashed;
+    background: #111419;
+    color: #686d76;
+    cursor: not-allowed;
+}
+
+.stage-option:disabled:not(.is-locked) {
+    cursor: default;
 }
 
 .game-header {
@@ -61,6 +170,11 @@ h1 {
     background: #211c12;
 }
 
+.sidebar-energy {
+    width: 100%;
+    box-shadow: 0 14px 30px rgb(0 0 0 / 28%);
+}
+
 .energy>span {
     color: #ffc857;
     font-size: 24px;
@@ -82,6 +196,7 @@ h1 {
 }
 
 .game-panel {
+    min-width: 0;
     padding: 24px;
     border: 1px solid #343943;
     border-radius: 14px;
@@ -129,7 +244,7 @@ h1 {
 .button-chamber {
     position: relative;
     display: flex;
-    min-height: 560px;
+    min-height: 620px;
     align-items: center;
     justify-content: center;
     flex-direction: column;
@@ -211,34 +326,80 @@ h1 {
         0 16px 30px rgb(0 0 0 / 60%);
 }
 
-.statistics {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    margin-top: 18px;
+.run-data {
+    padding: 12px;
     border: 1px solid #343943;
+    border-radius: 12px;
+    background: #14171c;
+    box-shadow: 0 14px 30px rgb(0 0 0 / 24%);
 }
 
-.statistics div {
+.stage-score {
     display: flex;
+    min-height: 86px;
     align-items: center;
+    justify-content: center;
     flex-direction: column;
     gap: 7px;
-    padding: 16px;
-    border-right: 1px solid #343943;
+    padding: 12px 8px;
+    border: 1px solid #6f5725;
+    border-radius: 9px;
+    background: linear-gradient(145deg, #292113, #1b1c1f);
+    text-align: center;
 }
 
-.statistics div:last-child {
-    border-right: 0;
-}
-
-.statistics span {
-    color: #9da1aa;
+.stage-score span {
+    color: #ffc857;
     font-family: monospace;
-    font-size: 11px;
+    font-size: 10px;
+    letter-spacing: 1px;
 }
 
-.statistics strong {
-    font-size: 18px;
+.stage-score strong {
+    max-width: 100%;
+    overflow: hidden;
+    color: #fff3c4;
+    font-size: 32px;
+    line-height: 1;
+    text-overflow: ellipsis;
+}
+
+.run-data-secondary {
+    display: grid;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.run-data-secondary div {
+    display: flex;
+    min-width: 0;
+    min-height: 42px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid #30353e;
+    border-radius: 7px;
+    background: #1b1f26;
+}
+
+.run-data-secondary span {
+    color: #949aa4;
+    font-family: monospace;
+    font-size: 9px;
+    letter-spacing: 0.5px;
+}
+
+.run-data-secondary strong {
+    max-width: 100%;
+    overflow: hidden;
+    color: #f4f1ea;
+    font-size: 17px;
+    text-overflow: ellipsis;
+}
+
+.mobile-run-data {
+    display: none;
 }
 
 .upgrades {
@@ -663,47 +824,212 @@ h1 {
     filter: grayscale(0.4);
 }
 
-@media (max-width: 600px) {
-    .game-header {
-        align-items: flex-start;
-        flex-direction: column;
+.victory-screen {
+    background: radial-gradient(circle at center, rgb(255 200 87 / 18%), rgb(9 11 15 / 90%) 60%);
+}
+
+.victory-message {
+    border-color: #ffc857;
+    box-shadow: 0 0 30px rgb(255 200 87 / 16%);
+    text-shadow: 0 0 15px rgb(255 200 87 / 55%);
+}
+
+.victory-title {
+    display: block;
+    color: #fff0bc;
+    font-size: 24px;
+}
+
+@media (max-width: 900px) {
+    .game-layout {
+        grid-template-columns: 1fr;
+        gap: 12px;
     }
 
-    .game {
-        width: calc(100% - 12px);
-        padding-top: 12px;
+    .game-sidebar {
+        display: contents;
     }
 
-    .game-panel {
+    .desktop-run-data {
+        display: none;
+    }
+
+    .mobile-run-data {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+        gap: 8px;
+        margin-top: 14px;
         padding: 10px;
     }
 
+    .mobile-run-data .run-data-secondary {
+        margin-top: 0;
+    }
+
+    .sidebar-energy {
+        position: sticky;
+        top: 8px;
+        z-index: 20;
+        width: max-content;
+        max-width: calc(100vw - 24px);
+        justify-self: end;
+        background: rgb(33 28 18 / 94%);
+        backdrop-filter: blur(8px);
+    }
+
+    .stage-selector {
+        min-width: 0;
+        padding: 14px;
+        overflow: hidden;
+    }
+
+    .stage-selector-header>p:last-child {
+        margin-bottom: 12px;
+    }
+
+    .stage-list {
+        display: flex;
+        padding-bottom: 4px;
+        overflow-x: auto;
+        scroll-snap-type: x proximity;
+        scrollbar-width: thin;
+    }
+
+    .stage-option {
+        flex: 0 0 180px;
+        min-height: 92px;
+        scroll-snap-align: start;
+    }
+}
+
+@media (max-width: 600px) {
+    .game-header {
+        margin: 0 4px 12px;
+    }
+
+    .game {
+        width: 100%;
+        padding: 10px 8px 24px;
+    }
+
+    h1 {
+        font-size: clamp(28px, 9vw, 36px);
+    }
+
+    .warning {
+        font-size: 14px;
+    }
+
+    .sidebar-energy {
+        gap: 7px;
+        padding: 7px 11px;
+        border-radius: 999px;
+    }
+
+    .sidebar-energy>span {
+        font-size: 18px;
+    }
+
+    .sidebar-energy strong {
+        font-size: 17px;
+        line-height: 1;
+    }
+
+    .sidebar-energy small {
+        font-size: 8px;
+    }
+
+    .stage-selector {
+        padding: 10px;
+        border-radius: 10px;
+    }
+
+    .stage-selector-header .small-label,
+    .stage-selector-header>p:last-child {
+        display: none;
+    }
+
+    .stage-selector-header h2 {
+        margin-bottom: 9px;
+        font-size: 14px;
+    }
+
+    .game-panel {
+        padding: 8px;
+        border-radius: 12px;
+    }
+
+    .stage-option {
+        flex-basis: 136px;
+        min-height: 76px;
+        padding: 8px;
+    }
+
+    .stage-option strong {
+        font-size: 11px;
+    }
+
+    .meter-label {
+        gap: 8px;
+        font-size: 11px;
+        letter-spacing: 0.5px;
+    }
 
     .button-chamber {
-        min-height: 500px;
-        padding-inline: 10px;
+        min-height: clamp(500px, 70svh, 640px);
+        margin-top: 12px;
+        padding-inline: 8px;
+        overflow: hidden;
     }
 
     .main-button {
-        width: 180px;
-        height: 180px;
+        width: min(180px, 55vw);
+        height: min(180px, 55vw);
+        padding: 18px;
+        border-width: 10px;
     }
 
-    .statistics {
-        grid-template-columns: 1fr;
+    .mobile-run-data {
+        display: block;
     }
 
-    .statistics div {
-        border-right: 0;
-        border-bottom: 1px solid #343943;
+    .mobile-run-data .run-data-secondary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-top: 8px;
     }
 
-    .statistics div:last-child {
-        border-bottom: 0;
+    .mobile-run-data .run-data-secondary div {
+        justify-content: center;
+        flex-direction: column;
+        gap: 4px;
+        text-align: center;
     }
 
     .upgrades {
         grid-template-columns: 1fr;
+        gap: 10px;
+        margin-top: 12px;
+    }
+
+    .upgrade {
+        padding: 14px;
+    }
+
+    .upgrade h2 {
+        margin-bottom: 12px;
+        font-size: 15px;
+    }
+
+    .upgrade p {
+        overflow-wrap: anywhere;
+        font-size: 14px;
+    }
+
+    .upgrade button {
+        margin-top: 12px;
+        padding: 11px 8px;
+        overflow-wrap: anywhere;
+        font-size: 12px;
     }
 }
 
@@ -1413,5 +1739,180 @@ h1 {
     100% {
         opacity: 0;
         transform: translate(-50%, -75px) scale(1);
+    }
+}
+
+@media (orientation: landscape) and (max-height: 520px) and (max-width: 950px) {
+    .game {
+        width: 100%;
+        padding: 6px;
+    }
+
+    .game-header {
+        display: none;
+    }
+
+    .game-layout {
+        grid-template-columns: 175px minmax(0, 1fr);
+        gap: 8px;
+    }
+
+    .game-sidebar {
+        position: sticky;
+        top: 6px;
+        display: grid;
+        height: calc(100svh - 12px);
+        grid-template-rows: auto auto minmax(0, 1fr);
+        gap: 7px;
+    }
+
+    .sidebar-energy {
+        position: static;
+        width: 100%;
+        max-width: none;
+        padding: 7px 10px;
+        justify-self: stretch;
+        border-radius: 10px;
+    }
+
+    .sidebar-energy>span {
+        font-size: 18px;
+    }
+
+    .sidebar-energy strong {
+        font-size: 17px;
+    }
+
+    .sidebar-energy small {
+        font-size: 8px;
+    }
+
+    .desktop-run-data {
+        display: block;
+        padding: 8px;
+    }
+
+    .mobile-run-data {
+        display: none;
+    }
+
+    .stage-score {
+        min-height: 48px;
+        gap: 3px;
+        padding: 6px 4px;
+    }
+
+    .stage-score span {
+        font-size: 7px;
+    }
+
+    .stage-score strong {
+        font-size: 20px;
+    }
+
+    .run-data-secondary {
+        gap: 4px;
+        margin-top: 5px;
+    }
+
+    .run-data-secondary div {
+        min-height: 28px;
+        gap: 4px;
+        padding: 4px 5px;
+    }
+
+    .run-data-secondary span {
+        font-size: 7px;
+    }
+
+    .run-data-secondary strong {
+        font-size: 12px;
+    }
+
+    .stage-selector {
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+        padding: 8px;
+    }
+
+    .stage-selector-header .small-label,
+    .stage-selector-header>p:last-child {
+        display: none;
+    }
+
+    .stage-selector-header h2 {
+        margin-bottom: 7px;
+        font-size: 12px;
+    }
+
+    .stage-list {
+        display: grid;
+        min-height: 0;
+        align-content: start;
+        gap: 5px;
+        padding: 0 2px 0 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        scroll-snap-type: none;
+    }
+
+    .stage-option {
+        width: 100%;
+        min-height: 43px;
+        flex: none;
+        gap: 2px;
+        padding: 6px;
+    }
+
+    .stage-option strong {
+        font-size: 10px;
+    }
+
+    .stage-option small {
+        display: none;
+    }
+
+    .game-panel {
+        padding: 8px;
+    }
+
+    .meter-label {
+        margin-bottom: 5px;
+        font-size: 10px;
+    }
+
+    .meter-track {
+        height: 9px;
+    }
+
+    .button-chamber {
+        min-height: calc(100svh - 53px);
+        margin-top: 8px;
+        padding: 8px;
+    }
+
+    .durability-meter {
+        margin-bottom: 26px;
+    }
+
+    .main-button,
+    .red-light-button {
+        width: 140px;
+        height: 140px;
+        padding: 14px;
+        border-width: 9px;
+        font-size: 12px;
+    }
+
+    .start-message {
+        padding: 10px 16px;
+        font-size: 14px;
+    }
+
+    .polarity-button {
+        width: 52px;
+        height: 52px;
+        border-width: 4px;
     }
 }
