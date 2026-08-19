@@ -1914,7 +1914,7 @@ export default function App() {
                         )}
 
                         {gamePhase === "redLightResult" && currentRedLightEvent && (
-                            <button className={`start-area red-light-result red-light-result-${redLightResult}`} type="button" onClick={startNormalRun}>
+                            <button className={`start-area red-light-result red-light-result-${redLightResult}`} type="button" onClick={() => startNormalRun()}>
                                 <span className="start-message red-light-result-message">
                                     <small className="secret-event-label red-light-secret-label">SECRET EVENT</small>
                                     <strong className="red-light-intro-title">
