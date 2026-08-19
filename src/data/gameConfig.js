@@ -29,8 +29,90 @@ const CHAIN_LIGHTNING = {
             damageMultipliers: [0.5],
         },
         {
-            cost: 500,
+            cost: 1000,
             damageMultipliers: [0.5, 0.25],
+        },
+    ],
+};
+
+const AUTO_FINGER = {
+    travelDurationMs: 320,
+    pressDurationMs: 160,
+    minimumDamage: 0.5,
+    homePosition: {
+        x: 8,
+        y: 88,
+    },
+    levels: [
+        {
+            cost: 0,
+            damageMultiplier: 0,
+            attackIntervalMs: 0,
+        },
+        {
+            cost: 150,
+            damageMultiplier: 0.4,
+            attackIntervalMs: 1500,
+        },
+        {
+            cost: 500,
+            damageMultiplier: 0.5,
+            attackIntervalMs: 1000,
+        },
+        {
+            cost: 1500,
+            damageMultiplier: 0.75,
+            attackIntervalMs: 750,
+        },
+        {
+            cost: 3000,
+            damageMultiplier: 0.9,
+            attackIntervalMs: 500,
+        },
+        {
+            cost: 6000,
+            damageMultiplier: 1.2,
+            attackIntervalMs: 400,
+        },
+    ],
+};
+
+const FIREBALL_DROP = {
+    warningDurationMs: 300,
+    fallDurationMs: 650,
+    impactDurationMs: 350,
+    firstStrikeDelayMs: 1000,
+    minimumDamage: 1,
+    levels: [
+        {
+            cost: 0,
+            damageMultiplier: 0,
+            attackIntervalMs: 0,
+            laneWidthPercent: 0,
+        },
+        {
+            cost: 250,
+            damageMultiplier: 0.75,
+            attackIntervalMs: 5000,
+            laneWidthPercent: 10,
+        },
+        {
+            cost: 750,
+            damageMultiplier: 1,
+            attackIntervalMs: 4000,
+            laneWidthPercent: 14,
+        },
+        {
+            cost: 2000,
+            damageMultiplier: 1.35,
+            attackIntervalMs: 3000,
+            laneWidthPercent: 16,
+        },
+        {
+            cost: 5000,
+            damageMultiplier: 1.75,
+            attackIntervalMs: 2000,
+            laneWidthPercent: 20,
         },
     ],
 };
@@ -38,7 +120,7 @@ const CHAIN_LIGHTNING = {
 const BUTTONS = [
     {
         name: "FINGER BREAKER",
-        buttonText: "DO NOT PRESS",
+        buttonText: "😏 YOU PRESSED IT. NOW WORK.",
         // buttonText: "",
         durability: 120,
         pressReward: 0,
@@ -78,6 +160,16 @@ const BUTTONS = [
         damagePerSecond: 16,
         colorClass: "yellow-button",
         defeatMessage: "CONGRATS. YOU DEFEATED BASIC JUDGMENT.",
+    },
+    {
+        name: "THE VOID EMPEROR",
+        buttonText: "YOUR CLICKS DIE HERE",
+        durability: 50000,
+        pressReward: 0,
+        breakReward: 5000,
+        damagePerSecond: 32,
+        colorClass: "black-button",
+        defeatMessage: "IMPOSSIBLE. YOU OUTLASTED THE VOID.",
     },
 ];
 
@@ -126,7 +218,8 @@ const RUN_RULES = {
     // bossBreakDamage: 0,
     restartCooldownSeconds: 3,
     healthTickMs: 50,
-    stageDamagePerSecond: 1,
+    stageDamageMultiplier: 0.25,
+    minimumStageDamagePerSecond: 1,
 };
 
 const SMALL_BUTTON_PHASE = {
@@ -153,17 +246,17 @@ const RED_LIGHT_EVENT = {
     redDurationRangeMs: [1200, 1800],
     appearances: [
         {
-            requiredTotalPresses: 200,
+            requiredTotalPresses: 300,
             targetHits: 50,
             reward: 150,
         },
         {
-            requiredTotalPresses: 500,
+            requiredTotalPresses: 800,
             targetHits: 65,
             reward: 350,
         },
         {
-            requiredTotalPresses: 1000,
+            requiredTotalPresses: 1500,
             targetHits: 80,
             reward: 750,
         },
@@ -245,6 +338,10 @@ const SMALL_BUTTON_STAGE_SCALING = [
         durabilityMultiplier: 12,
         rewardMultiplier: 8,
     },
+    {
+        durabilityMultiplier: 24,
+        rewardMultiplier: 16,
+    },
 ];
 export {
     BUTTONS,
@@ -254,6 +351,8 @@ export {
     HEALTH_UPGRADE,
     REPAIR_KIT,
     CHAIN_LIGHTNING,
+    AUTO_FINGER,
+    FIREBALL_DROP,
     RUN_RULES,
     SMALL_BUTTON_PHASE,
     GOLDEN_RUSH,

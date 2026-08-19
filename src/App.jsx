@@ -7,6 +7,8 @@ import {
     HEALTH_UPGRADE,
     REPAIR_KIT,
     CHAIN_LIGHTNING,
+    AUTO_FINGER,
+    FIREBALL_DROP,
     RUN_RULES,
     SMALL_BUTTON_PHASE,
     GOLDEN_RUSH,
@@ -18,55 +20,52 @@ import { playBreakSound } from "./utils/audio"
 import { createSmallButtonInstance, createGoldenButtonInstance } from "./utils/buttonUtils";
 import { findLightningChain, createLightningPoints, createLightningBranches } from "./utils/lightning";
 import { createPolarityRushButtons, togglePolarityButton, isPolarityWaveComplete } from "./utils/polarity";
+import { findNearestAutoFingerTarget } from "./utils/autoFinger";
+import { chooseFireballLaneX, findButtonsInsideFireballLane, isPositionInsideFireballLane } from "./utils/fireball";
+import { loadGameSave, saveGameSave } from "./utils/storage";
 import LightningEffect from "./components/LightningEffect";
+import AutoFinger from "./components/AutoFinger";
+import FireballDrop from "./components/FireballDrop";
 
-function getSavedNumber(key, defaultValue) {
-    const savedValue = localStorage.getItem(key);
-
-    if (savedValue === null) {
-        return defaultValue;
-    }
-
-    return Number(savedValue);
-}
-
-function getSavedArray(key) {
-    const savedValue = localStorage.getItem(key);
-
-    if (savedValue === null) {
-        return [];
-    }
-
-    try {
-        const parsedValue = JSON.parse(savedValue);
-        return Array.isArray(parsedValue) ? parsedValue : [];
-    } catch {
-        return [];
-    }
-}
+const initialGameSave = loadGameSave();
 
 function getRandomDuration([minimum, maximum]) {
     return minimum + Math.random() * (maximum - minimum);
 }
 
-function getSavedPolarityEventIndex() {
-    const savedEventIndex = getSavedNumber("pendingPolarityEventIndex", -1);
+function getInitialPolarityEventIndex() {
+    const savedEventIndex = initialGameSave.events.pendingPolarityEventIndex;
     return savedEventIndex >= 0 && savedEventIndex < POLARITY_EVENT.attempts.length ? savedEventIndex : -1;
 }
 
-function getSavedStageIndex() {
-    const savedStage = localStorage.getItem("highestUnlockedStage");
+function getInitialStageIndex() {
+    return Math.min(Math.max(initialGameSave.progress.highestUnlockedStage, 0), BUTTONS.length - 1);
+}
 
-    if (savedStage !== null) {
-        return Math.min(Math.max(Number(savedStage), 0), BUTTONS.length - 1);
+function getInitialGamePhase() {
+    if (!initialGameSave.events.hasSeenIntro) {
+        return "intro";
     }
 
-    const completedRushes = getSavedArray("completedGoldenRushes");
-    const inferredStage = completedRushes.reduce((highestStage, defeatedBossIndex) => Math.max(highestStage, defeatedBossIndex + 1), 0);
-    return Math.min(inferredStage, BUTTONS.length - 1);
+    return getInitialPolarityEventIndex() >= 0 ? "polarityIntro" : "waiting";
 }
 
 const EVENT_INTRO_DELAY_SECONDS = 2;
+const ENDING_CHOICE_DELAY_SECONDS = 2;
+
+function getIntroResistanceMessage(seconds) {
+    const displayedSeconds = seconds.toFixed(1);
+
+    if (seconds < 2) {
+        return `IMPRESSIVE SELF-CONTROL: ${displayedSeconds} SECONDS.`;
+    }
+
+    if (seconds < 10) {
+        return `WELL. THAT TOOK ${displayedSeconds} SECONDS.`;
+    }
+
+    return `${displayedSeconds} SECONDS? CUTE. YOU STILL PRESSED IT.`;
+}
 
 function RunData({ className, currentScore, bestScore, totalPresses }) {
     return (
@@ -93,12 +92,12 @@ function RunData({ className, currentScore, bestScore, totalPresses }) {
 
 export default function App() {
     const [presses, setPresses] = useState(0);
-    const [totalManualPresses, setTotalManualPresses] = useState(() => getSavedNumber("totalManualPresses", 0));
+    const [totalManualPresses, setTotalManualPresses] = useState(initialGameSave.progress.totalManualPresses);
     const [runScore, setRunScore] = useState(0);
-    const [bestScore, setBestScore] = useState(() => getSavedNumber("bestScore", 0));
+    const [bestScore, setBestScore] = useState(initialGameSave.progress.bestScore);
     const [buttonIndex, setButtonIndex] = useState(0);
-    const [highestUnlockedStage, setHighestUnlockedStage] = useState(() => getSavedStageIndex());
-    const [selectedStartingStage, setSelectedStartingStage] = useState(() => getSavedStageIndex());
+    const [highestUnlockedStage, setHighestUnlockedStage] = useState(getInitialStageIndex());
+    const [selectedStartingStage, setSelectedStartingStage] = useState(getInitialStageIndex());
     const currentButton = BUTTONS[buttonIndex];
     const [activeSmallButtons, setActiveSmallButtons,] = useState([]);
     const [goldenButtons, setGoldenButtons] = useState([]);
@@ -107,38 +106,36 @@ export default function App() {
     const [buttonDurability, setButtonDurability] = useState(
         BUTTONS[0].durability,);
 
-    const [energy, setEnergy] = useState(() =>
-        getSavedNumber("energy", 0),);
+    const [energy, setEnergy] = useState(initialGameSave.progress.energy);
     const [fingerHealth, setFingerHealth] = useState(0);
     const [isRunActive, setIsRunActive] = useState(false);
-    const [gamePhase, setGamePhase] = useState(() => getSavedPolarityEventIndex() >= 0 ? "polarityIntro" : "waiting");
+    const [gamePhase, setGamePhase] = useState(getInitialGamePhase());
+    const [introStep, setIntroStep] = useState("temptation");
+    const [introResistanceSeconds, setIntroResistanceSeconds] = useState(null);
     const [stageMessage, setStageMessage] = useState("");
     const [phaseTimeLeft, setPhaseTimeLeft] = useState(SMALL_BUTTON_PHASE.durationSeconds,);
     const [goldenRushTimeLeft, setGoldenRushTimeLeft] = useState(0);
     const [restartCooldown, setRestartCooldown] = useState(0);
     const [isButtonBreaking, setIsButtonBreaking] = useState(false);
-    const [powerLevel, setPowerLevel] = useState(() =>
-        getSavedNumber("powerLevel", 0),);
-    const [healthLevel, setHealthLevel] = useState(() =>
-        getSavedNumber("healthLevel", 0),);
-    const [spawnSpeedLevel, setSpawnSpeedLevel] = useState(() =>
-        getSavedNumber("spawnSpeedLevel", 0),);
-    const [healItemCount, setHealItemCount] = useState(() =>
-        getSavedNumber("healItemCount", 0),);
-    const [healingButtonLevel, setHealingButtonLevel] = useState(() =>
-        getSavedNumber("healingButtonLevel", 0),);
-    const [completedGoldenRushes, setCompletedGoldenRushes] = useState(() =>
-        getSavedArray("completedGoldenRushes"),);
-    const [completedRedLightEvents, setCompletedRedLightEvents] = useState(() => getSavedArray("completedRedLightEvents"));
+    const [powerLevel, setPowerLevel] = useState(initialGameSave.upgrades.powerLevel);
+    const [healthLevel, setHealthLevel] = useState(initialGameSave.upgrades.healthLevel);
+    const [spawnSpeedLevel, setSpawnSpeedLevel] = useState(initialGameSave.upgrades.spawnSpeedLevel);
+    const [healItemCount, setHealItemCount] = useState(initialGameSave.inventory.healItemCount);
+    const [healingButtonLevel, setHealingButtonLevel] = useState(initialGameSave.upgrades.healingButtonLevel);
+    const [completedGoldenRushes, setCompletedGoldenRushes] = useState(initialGameSave.events.completedGoldenRushes);
+    const [hasSeenIntro, setHasSeenIntro] = useState(initialGameSave.events.hasSeenIntro);
+    const [hasSeenEnding, setHasSeenEnding] = useState(initialGameSave.events.hasSeenEnding);
+    const [endingChoiceTimeLeft, setEndingChoiceTimeLeft] = useState(0);
+    const [completedRedLightEvents, setCompletedRedLightEvents] = useState(initialGameSave.events.completedRedLightEvents);
     const [redLightEventIndex, setRedLightEventIndex] = useState(null);
     const [redLightTimeLeft, setRedLightTimeLeft] = useState(0);
     const [redLightHits, setRedLightHits] = useState(0);
     const [redLightState, setRedLightState] = useState("green");
     const [redLightResult, setRedLightResult] = useState(null);
-    const [polarityEventsPlayed, setPolarityEventsPlayed] = useState(() => Math.min(Math.max(getSavedNumber("polarityEventsPlayed", 0), 0), POLARITY_EVENT.attempts.length));
-    const [pendingPolarityEventIndex, setPendingPolarityEventIndex] = useState(() => getSavedPolarityEventIndex());
+    const [polarityEventsPlayed, setPolarityEventsPlayed] = useState(Math.min(Math.max(initialGameSave.events.polarityEventsPlayed, 0), POLARITY_EVENT.attempts.length));
+    const [pendingPolarityEventIndex, setPendingPolarityEventIndex] = useState(getInitialPolarityEventIndex());
     const [activePolarityEventIndex, setActivePolarityEventIndex] = useState(() => {
-        const savedEventIndex = getSavedPolarityEventIndex();
+        const savedEventIndex = getInitialPolarityEventIndex();
         return savedEventIndex >= 0 ? savedEventIndex : null;
     });
     const [polarityButtons, setPolarityButtons] = useState([]);
@@ -148,9 +145,19 @@ export default function App() {
     const [polarityTargetIsWhite, setPolarityTargetIsWhite] = useState(true);
     const [polarityResult, setPolarityResult] = useState(null);
     const [isPolarityResolving, setIsPolarityResolving] = useState(false);
-    const [eventIntroTimeLeft, setEventIntroTimeLeft] = useState(() => getSavedPolarityEventIndex() >= 0 ? EVENT_INTRO_DELAY_SECONDS : 0);
+    const [eventIntroTimeLeft, setEventIntroTimeLeft] = useState(getInitialPolarityEventIndex() >= 0 ? EVENT_INTRO_DELAY_SECONDS : 0);
+    const [autoFingerLevel, setAutoFingerLevel] = useState(() => {
+        const savedLevel = initialGameSave.upgrades.autoFingerLevel;
+        return Math.min(Math.max(savedLevel, 0), AUTO_FINGER.levels.length - 1);
+    });
+    const [autoFingerVisualState, setAutoFingerVisualState] = useState(null);
+    const [fireballLevel, setFireballLevel] = useState(() => {
+        const savedLevel = initialGameSave.upgrades.fireballLevel;
+        return Math.min(Math.max(savedLevel, 0), FIREBALL_DROP.levels.length - 1);
+    });
+    const [fireballStrike, setFireballStrike] = useState(null);
     const [chainLightningLevel, setChainLightningLevel] = useState(() => {
-        const savedLevel = getSavedNumber("chainLightningLevel", getSavedNumber("hasChainLightning", 0));
+        const savedLevel = initialGameSave.upgrades.chainLightningLevel;
         return Math.min(Math.max(savedLevel, 0), CHAIN_LIGHTNING.levels.length - 1);
     });
 
@@ -171,8 +178,8 @@ export default function App() {
     const currentPolarityAttempt = activePolarityEventIndex === null ? null : POLARITY_EVENT.attempts[activePolarityEventIndex];
     const nextPolarityTotalReward = nextPolarityAttempt ? nextPolarityAttempt.buttonCount * nextPolarityAttempt.waves * nextPolarityAttempt.rewardPerButton : 0;
     const currentPolarityTotalReward = currentPolarityAttempt ? currentPolarityAttempt.buttonCount * currentPolarityAttempt.waves * currentPolarityAttempt.rewardPerButton : 0;
-    const isEventScreenOpen = ["goldenRushIntro", "goldenRush", "redLightIntro", "redLightEvent", "redLightResult", "polarityIntro", "polarityEvent", "polarityResult"].includes(gamePhase);
-    const isStageSelectionLocked = isRunActive || isEventScreenOpen || gamePhase === "victory";
+    const isEventScreenOpen = ["intro", "goldenRushIntro", "goldenRush", "redLightIntro", "redLightEvent", "redLightResult", "polarityIntro", "polarityEvent", "polarityResult", "demoEnding"].includes(gamePhase);
+    const isStageSelectionLocked = isRunActive || isEventScreenOpen;
     const displayedStageIndex = isRunActive ? buttonIndex : selectedStartingStage;
 
     const healingButtonLevels = HEALING_BUTTON_UPGRADE.levels;
@@ -182,10 +189,42 @@ export default function App() {
     const healingButtonUpgradeCost = nextHealingButton ? nextHealingButton.cost : 0;
     const healingButtonHealAmount = SMALL_BUTTONS[HEALING_BUTTON_UPGRADE.buttonTypeIndex].healAmount;
 
-    const healItemCost = REPAIR_KIT.baseCost * 2 ** healItemCount;
+    const healItemCost = REPAIR_KIT.baseCost * 4 ** healItemCount;
 
     const pressPower = POWER_UPGRADE.basePower + powerLevel * POWER_UPGRADE.powerPerLevel;
     const powerUpgradeCost = POWER_UPGRADE.baseCost * (powerLevel + 1);
+
+    const autoFingerLevels = AUTO_FINGER.levels;
+    const currentAutoFinger = autoFingerLevels[autoFingerLevel];
+    const isAutoFingerMax = autoFingerLevel === autoFingerLevels.length - 1;
+    const nextAutoFinger = isAutoFingerMax ? null : autoFingerLevels[autoFingerLevel + 1];
+    const autoFingerUpgradeCost = nextAutoFinger ? nextAutoFinger.cost : 0;
+    const autoFingerDamage = Math.max(AUTO_FINGER.minimumDamage, pressPower * currentAutoFinger.damageMultiplier);
+    const baseAutoFinger = autoFingerLevels[1];
+    const describedAutoFinger = nextAutoFinger ?? currentAutoFinger;
+    const baseAutoFingerClickRate = 1000 / baseAutoFinger.attackIntervalMs;
+    const describedAutoFingerClickRate = 1000 / describedAutoFinger.attackIntervalMs;
+    const autoFingerPowerIncrease = Math.round((describedAutoFinger.damageMultiplier / baseAutoFinger.damageMultiplier - 1) * 100);
+    const autoFingerClickSpeedIncrease = Math.round((describedAutoFingerClickRate / baseAutoFingerClickRate - 1) * 100);
+
+    let autoFingerDescription;
+
+    if (autoFingerLevel === 0) {
+        autoFingerDescription = `Next: ${Math.round(baseAutoFinger.damageMultiplier * 100)}% power · Click rate ${Number(baseAutoFingerClickRate.toFixed(2))}/sec`;
+    } else if (isAutoFingerMax) {
+        autoFingerDescription = `Power +${autoFingerPowerIncrease}% · Click speed +${autoFingerClickSpeedIncrease}%`;
+    } else {
+        autoFingerDescription = `Next: Power +${autoFingerPowerIncrease}% · Click speed +${autoFingerClickSpeedIncrease}%`;
+    }
+
+    const fireballLevels = FIREBALL_DROP.levels;
+    const currentFireball = fireballLevels[fireballLevel];
+    const isFireballMax = fireballLevel === fireballLevels.length - 1;
+    const nextFireball = isFireballMax ? null : fireballLevels[fireballLevel + 1];
+    const describedFireball = nextFireball ?? currentFireball;
+    const fireballUpgradeCost = nextFireball ? nextFireball.cost : 0;
+    const fireballDamage = Math.max(FIREBALL_DROP.minimumDamage, pressPower * currentFireball.damageMultiplier);
+    const fireballDescription = `${isFireballMax ? "" : "Next: "}${Math.round(describedFireball.damageMultiplier * 100)}% power · ${describedFireball.attackIntervalMs / 1000}s · ${describedFireball.laneWidthPercent}% lane`;
 
     const maxFingerHealth = HEALTH_UPGRADE.baseHealth + healthLevel * HEALTH_UPGRADE.healthPerLevel;
     const healthUpgradeCost = HEALTH_UPGRADE.baseCost * (healthLevel + 1);
@@ -215,13 +254,25 @@ export default function App() {
             ? (nextSpawnSpeed.multiplier - 1) * 100
             : null;
 
+    const currentSpawnSpeedBonus =
+        (currentSpawnSpeed.multiplier - 1) * 100;
+
     const musicRef = useRef(null);
+    const introStartedAtRef = useRef(performance.now());
+    const gamePanelRef = useRef(null);
     const chamberRef = useRef(null);
     const bossButtonRef = useRef(null);
     const redLightFinishedRef = useRef(false);
     const polarityGridRef = useRef(null);
     const polarityFinishedRef = useRef(false);
     const polarityResolvingRef = useRef(false);
+    const activeSmallButtonsRef = useRef(activeSmallButtons);
+    const autoFingerPositionRef = useRef(AUTO_FINGER.homePosition);
+    const autoFingerHitRef = useRef(null);
+    const fireballHitRef = useRef(null);
+    const bossBreakingRef = useRef(false);
+
+    activeSmallButtonsRef.current = activeSmallButtons;
 
     const isFingerExhausted = fingerHealth === 0;
 
@@ -239,21 +290,35 @@ export default function App() {
     }
 
     useEffect(() => {
-        localStorage.setItem("energy", String(energy));
-        localStorage.setItem("powerLevel", String(powerLevel));
-        localStorage.setItem("healthLevel", String(healthLevel));
-        localStorage.setItem("healItemCount", String(healItemCount));
-        localStorage.setItem("spawnSpeedLevel", String(spawnSpeedLevel),);
-        localStorage.setItem("chainLightningLevel", String(chainLightningLevel),);
-        localStorage.setItem("healingButtonLevel", String(healingButtonLevel));
-        localStorage.setItem("completedGoldenRushes", JSON.stringify(completedGoldenRushes));
-        localStorage.setItem("totalManualPresses", String(totalManualPresses));
-        localStorage.setItem("completedRedLightEvents", JSON.stringify(completedRedLightEvents));
-        localStorage.setItem("polarityEventsPlayed", String(polarityEventsPlayed));
-        localStorage.setItem("pendingPolarityEventIndex", String(pendingPolarityEventIndex));
-        localStorage.setItem("highestUnlockedStage", String(highestUnlockedStage));
-        localStorage.setItem("bestScore", String(bestScore));
-    }, [energy, powerLevel, healthLevel, healItemCount, chainLightningLevel, spawnSpeedLevel, healingButtonLevel, completedGoldenRushes, totalManualPresses, completedRedLightEvents, polarityEventsPlayed, pendingPolarityEventIndex, highestUnlockedStage, bestScore]);
+        saveGameSave({
+            progress: {
+                energy,
+                highestUnlockedStage,
+                totalManualPresses,
+                bestScore,
+            },
+            upgrades: {
+                powerLevel,
+                healthLevel,
+                spawnSpeedLevel,
+                chainLightningLevel,
+                healingButtonLevel,
+                autoFingerLevel,
+                fireballLevel,
+            },
+            inventory: {
+                healItemCount,
+            },
+            events: {
+                completedGoldenRushes,
+                completedRedLightEvents,
+                polarityEventsPlayed,
+                pendingPolarityEventIndex,
+                hasSeenIntro,
+                hasSeenEnding,
+            },
+        });
+    }, [energy, powerLevel, healthLevel, healItemCount, chainLightningLevel, spawnSpeedLevel, healingButtonLevel, autoFingerLevel, fireballLevel, completedGoldenRushes, totalManualPresses, completedRedLightEvents, polarityEventsPlayed, pendingPolarityEventIndex, hasSeenIntro, hasSeenEnding, highestUnlockedStage, bestScore]);
 
     useEffect(() => {
         if (runScore > bestScore) {
@@ -276,7 +341,10 @@ export default function App() {
             const phaseDamage =
                 gamePhase === "boss"
                     ? currentButton.damagePerSecond
-                    : RUN_RULES.stageDamagePerSecond;
+                    : Math.max(
+                        RUN_RULES.minimumStageDamagePerSecond,
+                        currentButton.damagePerSecond * RUN_RULES.stageDamageMultiplier,
+                    );
 
             const damagePerTick =
                 phaseDamage * (RUN_RULES.healthTickMs / 1000);
@@ -427,6 +495,19 @@ export default function App() {
         const timeoutId = setTimeout(() => setEventIntroTimeLeft((currentTime) => currentTime - 1), 1000);
         return () => clearTimeout(timeoutId);
     }, [gamePhase, eventIntroTimeLeft]);
+
+    useEffect(() => {
+        if (gamePhase !== "demoEnding" || endingChoiceTimeLeft === 0) {
+            return;
+        }
+
+        const timeoutId = setTimeout(
+            () => setEndingChoiceTimeLeft((currentTime) => currentTime - 1),
+            1000,
+        );
+
+        return () => clearTimeout(timeoutId);
+    }, [gamePhase, endingChoiceTimeLeft]);
 
     useEffect(() => {
         if (gamePhase !== "redLightEvent") {
@@ -759,10 +840,12 @@ export default function App() {
         setGoldenButtons([]);
         setGoldenRushTimeLeft(0);
         setIsButtonBreaking(false);
+        bossBreakingRef.current = false;
 
         if (buttonIndex === BUTTONS.length - 1) {
-            setIsRunActive(false);
-            setGamePhase("victory");
+            setButtonDurability(currentButton.durability);
+            setStageMessage("THE VOID RESPAWNED. FREEDOM LASTED 0 SECONDS.");
+            setGamePhase("stageComplete");
             return;
         }
 
@@ -795,6 +878,53 @@ export default function App() {
         setEventIntroTimeLeft(EVENT_INTRO_DELAY_SECONDS);
         setGamePhase("goldenRushIntro");
         setIsButtonBreaking(false);
+    }
+
+    function showDemoEnding() {
+        setHasSeenEnding(true);
+        setEndingChoiceTimeLeft(ENDING_CHOICE_DELAY_SECONDS);
+        setIsRunActive(false);
+        setActiveSmallButtons([]);
+        setGoldenButtons([]);
+        setGoldenRushTimeLeft(0);
+        setIsButtonBreaking(false);
+        bossBreakingRef.current = false;
+        setGamePhase("demoEnding");
+    }
+
+    function continueToEndlessMode() {
+        if (endingChoiceTimeLeft > 0) {
+            return;
+        }
+
+        const finalStageIndex = BUTTONS.length - 1;
+        const music = musicRef.current;
+
+        if (music) {
+            music.volume = 0.2;
+            music.play();
+        }
+
+        setSelectedStartingStage(finalStageIndex);
+        setButtonIndex(finalStageIndex);
+        setButtonDurability(BUTTONS[finalStageIndex].durability);
+        setIsRunActive(true);
+        setGamePhase("smallButtons");
+        setPhaseTimeLeft(SMALL_BUTTON_PHASE.durationSeconds);
+        setActiveSmallButtons([createSmallButtonInstance(finalStageIndex, healingButtonLevel)]);
+        setGoldenButtons([]);
+        setGoldenRushTimeLeft(0);
+        setIsButtonBreaking(false);
+        setEndingChoiceTimeLeft(0);
+        bossBreakingRef.current = false;
+    }
+
+    function leaveDemoEnding() {
+        if (endingChoiceTimeLeft > 0) {
+            return;
+        }
+
+        returnToStageSelection();
     }
 
     function showRedLightIntro() {
@@ -974,6 +1104,42 @@ export default function App() {
         setGamePhase(presses === 0 ? "waiting" : "cooldown");
     }
 
+    function damageBossButton(damageAmount, hitPosition) {
+        if (bossBreakingRef.current) {
+            return;
+        }
+
+        if (buttonDurability <= damageAmount) {
+            const destroyedBossPosition = hitPosition || getElementCenterPosition(bossButtonRef.current, chamberRef.current);
+
+            bossBreakingRef.current = true;
+            setButtonDurability(0);
+            playBreakSound();
+            setIsButtonBreaking(true);
+            awardRunEnergy(currentButton.breakReward);
+            showRewardPopup(currentButton.breakReward, destroyedBossPosition);
+
+            setTimeout(() => {
+                unlockNextStage();
+
+                if (buttonIndex === BUTTONS.length - 1 && !hasSeenEnding) {
+                    showDemoEnding();
+                    return;
+                }
+
+                if (completedGoldenRushes.includes(buttonIndex)) {
+                    completeCurrentStage();
+                } else {
+                    showGoldenRushIntro();
+                }
+            }, 1000);
+
+            return;
+        }
+
+        setButtonDurability((currentDurability) => Math.max(0, currentDurability - damageAmount));
+    }
+
     function handlePress() {
         if (isButtonBreaking) {
             return;
@@ -992,38 +1158,28 @@ export default function App() {
         recordManualPress();
 
         awardRunEnergy(currentButton.pressReward);
-
-        if (buttonDurability <= pressPower) {
-            const destroyedBossPosition = bossPosition || getElementCenterPosition(bossButtonRef.current, chamberRef.current);
-
-            setButtonDurability(0);
-            playBreakSound();
-            setIsButtonBreaking(true);
-            awardRunEnergy(currentButton.breakReward);
-            showRewardPopup(currentButton.breakReward, destroyedBossPosition);
-
-            setTimeout(() => {
-                unlockNextStage();
-
-                // setFingerHealth((currentHealth) =>
-                //     Math.max(0, currentHealth - RUN_RULES.bossBreakDamage),
-                // );
-
-                if (completedGoldenRushes.includes(buttonIndex)) {
-                    completeCurrentStage();
-                } else {
-                    showGoldenRushIntro();
-                }
-            }, 1000);
-
-            return;
-        }
-
-        setButtonDurability((currentDurability) => Math.max(0, currentDurability - pressPower),);
+        damageBossButton(pressPower, bossPosition);
     }
 
-    function startNormalRun() {
-        const startingStage = selectedStartingStage;
+    function revealIntroPunishment() {
+        const elapsedSeconds = (performance.now() - introStartedAtRef.current) / 1000;
+        setIntroResistanceSeconds(elapsedSeconds);
+        setIntroStep("punishment");
+    }
+
+    function enterGameFromIntro() {
+        setHasSeenIntro(true);
+        startNormalRun();
+
+        requestAnimationFrame(() => {
+            gamePanelRef.current?.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+            });
+        });
+    }
+
+    function startNormalRun(startingStage = selectedStartingStage) {
         const music = musicRef.current;
 
         if (music) {
@@ -1044,8 +1200,10 @@ export default function App() {
         setGoldenButtons([]);
         setGoldenRushTimeLeft(0);
         setIsButtonBreaking(false);
+        bossBreakingRef.current = false;
         setRedLightEventIndex(null);
         setRedLightResult(null);
+        setEndingChoiceTimeLeft(0);
     }
 
     function selectStartingStage(stageIndex) {
@@ -1062,6 +1220,7 @@ export default function App() {
         setSelectedStartingStage(highestUnlockedStage);
         setActiveSmallButtons([]);
         setGoldenButtons([]);
+        setEndingChoiceTimeLeft(0);
         setGamePhase("waiting");
     }
 
@@ -1121,6 +1280,24 @@ export default function App() {
         setEnergy((currentEnergy) => currentEnergy - chainLightningUpgradeCost);
 
         setChainLightningLevel((currentLevel) => currentLevel + 1);
+    }
+
+    function buyAutoFingerUpgrade() {
+        if (isRunActive || isAutoFingerMax || energy < autoFingerUpgradeCost) {
+            return;
+        }
+
+        setEnergy((currentEnergy) => currentEnergy - autoFingerUpgradeCost);
+        setAutoFingerLevel((currentLevel) => currentLevel + 1);
+    }
+
+    function buyFireballUpgrade() {
+        if (isRunActive || isFireballMax || energy < fireballUpgradeCost) {
+            return;
+        }
+
+        setEnergy((currentEnergy) => currentEnergy - fireballUpgradeCost);
+        setFireballLevel((currentLevel) => currentLevel + 1);
     }
 
     function buyHealingButtonUpgrade() {
@@ -1202,6 +1379,191 @@ export default function App() {
         );
     }
 
+    autoFingerHitRef.current = (target) => {
+        if (target.kind === "boss") {
+            if (gamePhase !== "boss" || isButtonBreaking) {
+                return;
+            }
+
+            awardRunEnergy(currentButton.pressReward);
+            damageBossButton(autoFingerDamage, target.position);
+            return;
+        }
+
+        const latestButton = activeSmallButtonsRef.current.find((button) => button.id === target.id);
+
+        if (!latestButton || latestButton.isBreaking) {
+            return;
+        }
+
+        const buttonType = SMALL_BUTTONS[latestButton.typeIndex];
+        awardRunEnergy(buttonType.pressReward);
+        damageSmallButton(latestButton, autoFingerDamage);
+    };
+
+    useEffect(() => {
+        const canAutoFingerAttack = autoFingerLevel > 0 && isRunActive && !isButtonBreaking && (gamePhase === "smallButtons" || gamePhase === "boss");
+
+        if (!canAutoFingerAttack) {
+            setAutoFingerVisualState(null);
+            autoFingerPositionRef.current = AUTO_FINGER.homePosition;
+            return;
+        }
+
+        let firstAttackTimeoutId;
+        let travelTimeoutId;
+        let releaseTimeoutId;
+
+        function beginAutoFingerAttack() {
+            let target;
+
+            if (gamePhase === "boss") {
+                const bossPosition = getElementCenterPosition(bossButtonRef.current, chamberRef.current);
+
+                if (!bossPosition) {
+                    return;
+                }
+
+                target = {
+                    id: "boss",
+                    kind: "boss",
+                    position: bossPosition,
+                };
+            } else {
+                const smallButton = findNearestAutoFingerTarget(activeSmallButtonsRef.current, autoFingerPositionRef.current);
+
+                if (!smallButton) {
+                    return;
+                }
+
+                target = {
+                    id: smallButton.id,
+                    kind: "smallButton",
+                    position: smallButton.position,
+                };
+            }
+
+            const attackId = crypto.randomUUID();
+            autoFingerPositionRef.current = target.position;
+            setAutoFingerVisualState({
+                attackId,
+                position: target.position,
+                isPressing: false,
+                travelDurationMs: AUTO_FINGER.travelDurationMs,
+            });
+
+            travelTimeoutId = setTimeout(() => {
+                setAutoFingerVisualState((currentVisual) => currentVisual?.attackId === attackId ? { ...currentVisual, isPressing: true } : currentVisual);
+                autoFingerHitRef.current?.(target);
+
+                releaseTimeoutId = setTimeout(() => {
+                    setAutoFingerVisualState((currentVisual) => currentVisual?.attackId === attackId ? { ...currentVisual, isPressing: false } : currentVisual);
+                }, AUTO_FINGER.pressDurationMs);
+            }, AUTO_FINGER.travelDurationMs);
+        }
+
+        setAutoFingerVisualState({
+            attackId: "home",
+            position: AUTO_FINGER.homePosition,
+            isPressing: false,
+            travelDurationMs: AUTO_FINGER.travelDurationMs,
+        });
+        autoFingerPositionRef.current = AUTO_FINGER.homePosition;
+
+        firstAttackTimeoutId = setTimeout(beginAutoFingerAttack, 250);
+        const attackIntervalId = setInterval(beginAutoFingerAttack, currentAutoFinger.attackIntervalMs);
+
+        return () => {
+            clearTimeout(firstAttackTimeoutId);
+            clearTimeout(travelTimeoutId);
+            clearTimeout(releaseTimeoutId);
+            clearInterval(attackIntervalId);
+        };
+    }, [autoFingerLevel, currentAutoFinger.attackIntervalMs, gamePhase, isButtonBreaking, isRunActive]);
+
+    fireballHitRef.current = (strike) => {
+        const smallButtonTargets = findButtonsInsideFireballLane(
+            activeSmallButtonsRef.current,
+            strike.x,
+            strike.laneWidthPercent,
+        );
+
+        smallButtonTargets.forEach((button) => {
+            damageSmallButton(button, fireballDamage);
+        });
+
+        if (gamePhase !== "boss" || isButtonBreaking) {
+            return;
+        }
+
+        const bossPosition = getElementCenterPosition(bossButtonRef.current, chamberRef.current);
+
+        if (isPositionInsideFireballLane(bossPosition, strike.x, strike.laneWidthPercent)) {
+            damageBossButton(fireballDamage, bossPosition);
+        }
+    };
+
+    useEffect(() => {
+        const canDropFireballs =
+            fireballLevel > 0 &&
+            isRunActive &&
+            (gamePhase === "smallButtons" || gamePhase === "boss");
+
+        if (!canDropFireballs) {
+            setFireballStrike(null);
+            return;
+        }
+
+        const timeoutIds = [];
+
+        function beginFireballStrike() {
+            if (bossBreakingRef.current) {
+                return;
+            }
+
+            const bossPosition =
+                gamePhase === "boss"
+                    ? getElementCenterPosition(bossButtonRef.current, chamberRef.current)
+                    : null;
+            const laneX = chooseFireballLaneX(activeSmallButtonsRef.current, bossPosition);
+
+            if (laneX === null) {
+                return;
+            }
+
+            const strike = {
+                id: crypto.randomUUID(),
+                x: laneX,
+                laneWidthPercent: currentFireball.laneWidthPercent,
+                warningDurationMs: FIREBALL_DROP.warningDurationMs,
+                fallDurationMs: FIREBALL_DROP.fallDurationMs,
+                impactDurationMs: FIREBALL_DROP.impactDurationMs,
+            };
+            const impactDelay = FIREBALL_DROP.warningDurationMs + FIREBALL_DROP.fallDurationMs;
+            const totalDuration = impactDelay + FIREBALL_DROP.impactDurationMs;
+
+            setFireballStrike(strike);
+
+            timeoutIds.push(
+                setTimeout(() => fireballHitRef.current?.(strike), impactDelay),
+                setTimeout(() => {
+                    setFireballStrike((currentStrike) =>
+                        currentStrike?.id === strike.id ? null : currentStrike,
+                    );
+                }, totalDuration),
+            );
+        }
+
+        timeoutIds.push(setTimeout(beginFireballStrike, FIREBALL_DROP.firstStrikeDelayMs));
+        const strikeIntervalId = setInterval(beginFireballStrike, currentFireball.attackIntervalMs);
+
+        return () => {
+            timeoutIds.forEach((timeoutId) => clearTimeout(timeoutId));
+            clearInterval(strikeIntervalId);
+            setFireballStrike(null);
+        };
+    }, [fireballLevel, currentFireball.attackIntervalMs, currentFireball.laneWidthPercent, gamePhase, isRunActive]);
+
     return (
         <main className="game">
             <audio
@@ -1210,9 +1572,83 @@ export default function App() {
                 loop
                 preload="auto"
             />
+
+            {gamePhase === "intro" && (
+                <div
+                    className="intro-screen"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="intro-title"
+                >
+                    <section className={`intro-panel intro-panel-${introStep}`}>
+                        {introStep === "temptation" ? (
+                            <>
+                                <small className="intro-kicker">ONE SIMPLE INSTRUCTION</small>
+
+                                <h2 id="intro-title" className="intro-title">
+                                    DO NOT PRESS.
+                                </h2>
+
+                                <p className="intro-taunt">
+                                    That’s it. Surely this will be enough.
+                                </p>
+
+                                <button
+                                    className="intro-button"
+                                    type="button"
+                                    onClick={revealIntroPunishment}
+                                >
+                                    <span>DO NOT</span>
+                                    <small>PRESS</small>
+                                </button>
+
+                                <small className="intro-legal">
+                                    We trust you completely.
+                                </small>
+                            </>
+                        ) : (
+                            <>
+                                <small className="intro-kicker intro-violation-label">
+                                    ⚠ VIOLATION DETECTED
+                                </small>
+
+                                <h2 id="intro-title" className="intro-title intro-punishment-title">
+                                    {getIntroResistanceMessage(introResistanceSeconds ?? 0)}
+                                </h2>
+
+                                <p className="intro-rule">
+                                    You ignored the only instruction. Your punishment has been approved.
+                                </p>
+
+                                <div className="intro-sentence">
+                                    <strong>WELCOME TO THE BUTTON TESTING DEPARTMENT</strong>
+
+                                    <p>
+                                        Break five cursed buttons. Turn finger pain into Press Energy.
+                                        Automate your bad decisions. Earn your freedom.
+                                    </p>
+                                </div>
+
+                                <p className="intro-punishment-joke">
+                                    Good news: there is an exit. Bad news: getting out won't be as easy as getting in.
+                                </p>
+
+                                <button
+                                    className="intro-enter-button"
+                                    type="button"
+                                    onClick={enterGameFromIntro}
+                                >
+                                    ACCEPT YOUR PUNISHMENT
+                                </button>
+                            </>
+                        )}
+                    </section>
+                </div>
+            )}
+
             <header className="game-header">
                 <div>
-                    <p className="small-label">TEST CHAMBER 01</p>
+                    <p className="small-label">THE FORBIDDEN BUTTON EXPERIMENT</p>
                     <h1>DO NOT PRESS</h1>
                     <p className="warning">You have been warned.</p>
                 </div>
@@ -1227,13 +1663,6 @@ export default function App() {
                             <small>PRESS ENERGY</small>
                         </div>
                     </div>
-
-                    <RunData
-                        className="desktop-run-data"
-                        currentScore={runScore}
-                        bestScore={bestScore}
-                        totalPresses={totalManualPresses}
-                    />
 
                     <div className="stage-selector">
                         <div className="stage-selector-header">
@@ -1272,608 +1701,710 @@ export default function App() {
                     </div>
                 </aside>
 
-                <section className="game-panel">
-                <div className="meter">
-                    <div className="meter-label">
-                        <span>FINGER HEALTH</span>
-                        <strong>
-                            {fingerHealth.toFixed(1)} / {maxFingerHealth}
-                        </strong>
-                    </div>
-
-                    <div className="meter-track">
-                        <div
-                            className="meter-fill health-fill"
-                            style={{
-                                width: `${(fingerHealth / maxFingerHealth) * 100}%`,
-                            }}
-                        />
-                    </div>
-                </div>
-
-                <RunData
-                    className="mobile-run-data"
-                    currentScore={runScore}
-                    bestScore={bestScore}
-                    totalPresses={totalManualPresses}
-                />
-
-                <div
-                    ref={chamberRef}
-                    className="button-chamber"
-                >
-                    {isRunActive && healItemCount > 0 && (
-                        <div className="run-tools">
-                            <button
-                                className="heal-item-button"
-                                type="button"
-                                onClick={useHealItem}
-                                aria-label={`Use repair kit and restore ${REPAIR_KIT.healPercentage * 100}% of maximum health`}
-                                title={`Restore ${REPAIR_KIT.healPercentage * 100}% of maximum health`}
-                                disabled={
-                                    fingerHealth <= 0 ||
-                                    fingerHealth >= maxFingerHealth
-                                }
-                            >
-                                🩹
-
-                                <span
-                                    className="heal-item-count"
-                                    aria-hidden="true"
-                                >
-                                    {healItemCount}
-                                </span>
-                            </button>
-                        </div>
-                    )}
-                    <LightningEffect effect={lightningEffect} />
-
-                    {rewardPopups.map((rewardPopup) => (
-                        <span
-                            key={rewardPopup.id}
-                            className="reward-popup"
-                            style={{
-                                left: `${rewardPopup.position.x}%`,
-                                top: `${rewardPopup.position.y}%`,
-                            }}
-                            aria-hidden="true"
-                            onAnimationEnd={() => removeRewardPopup(rewardPopup.id)}
-                        >
-                            +{rewardPopup.amount}⚡
-                        </span>
-                    ))}
-
-                    {gamePhase === "polarityIntro" && currentPolarityAttempt && (
-                        <div className="start-area event-intro-screen polarity-intro">
-                            <div className="start-message polarity-intro-message">
-                                <small className="secret-event-label polarity-secret-label">EVENT TICKET ACTIVATED</small>
-                                <strong className="polarity-intro-title">⚫ POLARITY RUSH ⚪</strong>
-                                <small className="polarity-rules">CLICK A BUTTON TO FLIP ITS COLOR · MATCH THE TARGET COLOR</small>
-                                <small className="polarity-goal">
-                                    {currentPolarityAttempt.waves} WAVES · {currentPolarityAttempt.waveDurationSeconds} SECONDS EACH · {currentPolarityTotalReward}⚡ REWARD
-                                </small>
-                                <span className="event-intro-action-slot">
-                                    {eventIntroTimeLeft > 0 ? (
-                                        <strong className="event-unlock-notice polarity-event-unlock-notice">YOU UNLOCKED A SECRET EVENT</strong>
-                                    ) : (
-                                        <button className="event-intro-action polarity-event-intro-action" type="button" onClick={startPolarityEvent}>START POLARITY RUSH</button>
-                                    )}
-                                </span>
-                            </div>
-                        </div>
-                    )}
-
-                    {gamePhase === "polarityEvent" && currentPolarityAttempt && (
-                        <div className="polarity-event">
-                            <div className="polarity-event-header">
-                                <strong>⚫ POLARITY RUSH ⚪</strong>
-                                <span className={`polarity-timer ${polarityTimeLeft <= 3 ? "is-urgent" : ""}`}>{Math.ceil(polarityTimeLeft)}s</span>
-                            </div>
-
-                            <div className="polarity-timer-track">
-                                <div
-                                    className={`polarity-timer-fill polarity-timer-fill-${polarityTargetIsWhite ? "white" : "black"}`}
-                                    style={{ width: `${(polarityTimeLeft / currentPolarityAttempt.waveDurationSeconds) * 100}%` }}
-                                />
-                            </div>
-
-                            <div className="polarity-event-stats">
-                                <span>{`WAVE ${polarityWave} / ${currentPolarityAttempt.waves}`}</span>
-                                <strong>MOVES: {polarityMoves}</strong>
-                            </div>
-
-                            <strong className={`polarity-target polarity-target-${polarityTargetIsWhite ? "white" : "black"}`}>
-                                {`MAKE THEM ALL ${polarityTargetIsWhite ? "WHITE" : "BLACK"}!`}
+                <section ref={gamePanelRef} className="game-panel">
+                    <div className="meter">
+                        <div className="meter-label">
+                            <span>FINGER HEALTH</span>
+                            <strong>
+                                {fingerHealth.toFixed(1)} / {maxFingerHealth}
                             </strong>
-
-                            <div ref={polarityGridRef} className="polarity-rush-field">
-                                {polarityButtons.map((button, index) => (
-                                    <button
-                                        key={button.id}
-                                        className={`polarity-button ${button.isWhite ? "polarity-button-white" : "polarity-button-black"} ${button.isBreaking ? "is-breaking" : ""}`}
-                                        type="button"
-                                        data-polarity-index={index}
-                                        onClick={() => handlePolarityButtonPress(index)}
-                                        disabled={isPolarityResolving}
-                                        aria-label={`Polarity button ${index + 1}, currently ${button.isWhite ? "white" : "black"}`}
-                                        style={{
-                                            left: `${button.position.x}%`,
-                                            top: `${button.position.y}%`,
-                                            animationDelay: button.isBreaking ? `${index * POLARITY_EVENT.buttonBreakStaggerMs}ms` : undefined,
-                                            animationDuration: button.isBreaking ? `${POLARITY_EVENT.breakDurationMs}ms` : undefined,
-                                        }}
-                                    />
-                                ))}
-                            </div>
-
-                            <p className="polarity-event-hint">CLICKING THE TARGET COLOR FLIPS IT BACK — MOVE FAST</p>
                         </div>
-                    )}
 
-                    {gamePhase === "polarityResult" && currentPolarityAttempt && (
-                        <button className={`start-area polarity-result polarity-result-${polarityResult}`} type="button" onClick={leavePolarityEvent}>
-                            <span className="start-message polarity-result-message">
-                                <small className="secret-event-label polarity-secret-label">POLARITY RUSH</small>
-                                <strong className="polarity-intro-title">
-                                    {polarityResult === "success" ? "✅ PERFECTLY UNDECIDED" : "❌ POLARITY COLLAPSE"}
-                                </strong>
-                                <small className="polarity-rules">
-                                    {polarityResult === "success" ? `ALL BUTTONS DESTROYED · +${currentPolarityTotalReward}⚡` : `TIME EXPIRED · TICKET ${activePolarityEventIndex + 1} USED`}
-                                </small>
-                                <small className="continue-hint">CLICK TO RETURN TO THE LAB</small>
-                            </span>
-                        </button>
-                    )}
-
-                    {gamePhase === "redLightIntro" && currentRedLightEvent && (
-                        <div className="start-area event-intro-screen red-light-intro">
-                            <div className="start-message red-light-intro-message">
-                                <small className="secret-event-label red-light-secret-label">SECRET EVENT</small>
-                                <strong className="red-light-intro-title">🚦 HUMAN CLICK VERIFICATION</strong>
-                                <small className="red-light-rules">
-                                    CLICK ON GREEN · RED MEANS STOP · CAUGHT LOCKS YOU FOR {RED_LIGHT_EVENT.caughtDurationMs / 1000} SECONDS
-                                </small>
-                                <small className="red-light-goal">
-                                    {currentRedLightEvent.targetHits} SAFE CLICKS · {RED_LIGHT_EVENT.durationSeconds} SECONDS · {currentRedLightEvent.reward}⚡ REWARD
-                                </small>
-                                <span className="event-intro-action-slot">
-                                    {eventIntroTimeLeft > 0 ? (
-                                        <strong className="event-unlock-notice">YOU UNLOCKED A SECRET EVENT</strong>
-                                    ) : (
-                                        <button className="event-intro-action" type="button" onClick={startRedLightEvent}>START VERIFICATION</button>
-                                    )}
-                                </span>
-                            </div>
+                        <div className="meter-track">
+                            <div
+                                className="meter-fill health-fill"
+                                style={{
+                                    width: `${(fingerHealth / maxFingerHealth) * 100}%`,
+                                }}
+                            />
                         </div>
-                    )}
+                    </div>
 
-                    {gamePhase === "redLightEvent" && currentRedLightEvent && (
-                        <div className={`red-light-event red-light-event-${redLightState}`}>
-                            <div className="red-light-event-header">
-                                <strong>🚦 HUMAN CLICK VERIFICATION</strong>
-                                <span>{redLightTimeLeft}s</span>
-                            </div>
+                    <div
+                        ref={chamberRef}
+                        className="button-chamber"
+                    >
+                        {isRunActive && healItemCount > 0 && (
+                            <div className="run-tools">
+                                <button
+                                    className="heal-item-button"
+                                    type="button"
+                                    onClick={useHealItem}
+                                    aria-label={`Use repair kit and restore ${REPAIR_KIT.healPercentage * 100}% of maximum health`}
+                                    title={`Restore ${REPAIR_KIT.healPercentage * 100}% of maximum health`}
+                                    disabled={
+                                        fingerHealth <= 0 ||
+                                        fingerHealth >= maxFingerHealth
+                                    }
+                                >
+                                    🩹
 
-                            <div className="red-light-progress">
-                                <span>SAFE CLICKS</span>
-                                <strong>{redLightHits} / {currentRedLightEvent.targetHits}</strong>
-                            </div>
-
-                            <button
-                                className={`red-light-button red-light-button-${redLightState}`}
-                                type="button"
-                                onClick={handleRedLightPress}
-                                disabled={redLightState === "caught"}
-                                aria-label={redLightState === "red" ? "Do not press during red light" : "Press during green light"}
-                            >
-                                {redLightState === "green" && "CLICK!"}
-                                {redLightState === "warning" && "LAST CHANCE!"}
-                                {redLightState === "red" && "DON'T MOVE!"}
-                                {redLightState === "caught" && "CAUGHT!"}
-                            </button>
-
-                            <p className="red-light-status">
-                                {redLightState === "green" && "GREEN LIGHT — GO!"}
-                                {redLightState === "warning" && "WARNING — RED LIGHT INCOMING!"}
-                                {redLightState === "red" && "RED LIGHT — HANDS OFF!"}
-                                {redLightState === "caught" && `INPUT LOCKED FOR ${RED_LIGHT_EVENT.caughtDurationMs / 1000} SECONDS`}
-                            </p>
-                        </div>
-                    )}
-
-                    {gamePhase === "redLightResult" && currentRedLightEvent && (
-                        <button className={`start-area red-light-result red-light-result-${redLightResult}`} type="button" onClick={startNormalRun}>
-                            <span className="start-message red-light-result-message">
-                                <small className="secret-event-label red-light-secret-label">SECRET EVENT</small>
-                                <strong className="red-light-intro-title">
-                                    {redLightResult === "success" ? "✅ HUMAN ENOUGH" : "❌ BOT BEHAVIOR DETECTED"}
-                                </strong>
-                                <small className="red-light-rules">
-                                    {redLightResult === "success" ? `VERIFICATION PASSED · +${currentRedLightEvent.reward}⚡` : `TIME EXPIRED · ${redLightHits} / ${currentRedLightEvent.targetHits} SAFE CLICKS`}
-                                </small>
-                                <small className="continue-hint">CLICK TO START THE NEXT RUN</small>
-                            </span>
-                        </button>
-                    )}
-
-                    {!isFingerExhausted && gamePhase === "goldenRushIntro" && (
-                        <div className="start-area event-intro-screen golden-rush-intro">
-                            <div className="start-message golden-rush-intro-message">
-                                <small className="secret-event-label">SECRET EVENT</small>
-                                <strong className="golden-rush-intro-title">✨ GOLDEN RUSH ✨</strong>
-                                <small className="golden-rush-rules">
-                                    ONE HIT · DOUBLE ENERGY · {GOLDEN_RUSH.durationSeconds} SECONDS
-                                </small>
-                                <span className="event-intro-action-slot">
-                                    {eventIntroTimeLeft > 0 ? (
-                                        <strong className="event-unlock-notice golden-event-unlock-notice">YOU UNLOCKED A SECRET EVENT</strong>
-                                    ) : (
-                                        <button className="event-intro-action golden-event-intro-action" type="button" onClick={startGoldenRush}>START GOLDEN RUSH</button>
-                                    )}
-                                </span>
-                            </div>
-                        </div>
-                    )}
-
-                    {gamePhase === "goldenRush" && (
-                        <>
-                            <div className="golden-rush-banner">
-                                <strong>✨ GOLDEN RUSH ✨</strong>
-                                <span>{goldenRushTimeLeft}s</span>
-                            </div>
-
-                            <div className="small-button-phase golden-button-phase">
-                                {goldenButtons.map((goldenButton) => (
-                                    <div
-                                        key={goldenButton.id}
-                                        className="small-target"
-                                        style={{
-                                            left: `${goldenButton.position.x}%`,
-                                            top: `${goldenButton.position.y}%`,
-                                        }}
+                                    <span
+                                        className="heal-item-count"
+                                        aria-hidden="true"
                                     >
+                                        {healItemCount}
+                                    </span>
+                                </button>
+                            </div>
+                        )}
+                        <LightningEffect effect={lightningEffect} />
+                        <AutoFinger visualState={autoFingerVisualState} />
+                        <FireballDrop strike={fireballStrike} />
+
+                        {rewardPopups.map((rewardPopup) => (
+                            <span
+                                key={rewardPopup.id}
+                                className="reward-popup"
+                                style={{
+                                    left: `${rewardPopup.position.x}%`,
+                                    top: `${rewardPopup.position.y}%`,
+                                }}
+                                aria-hidden="true"
+                                onAnimationEnd={() => removeRewardPopup(rewardPopup.id)}
+                            >
+                                +{rewardPopup.amount}⚡
+                            </span>
+                        ))}
+
+                        {gamePhase === "polarityIntro" && currentPolarityAttempt && (
+                            <div className="start-area event-intro-screen polarity-intro">
+                                <div className="start-message polarity-intro-message">
+                                    <small className="secret-event-label polarity-secret-label">EVENT TICKET ACTIVATED</small>
+                                    <strong className="polarity-intro-title">⚫ POLARITY RUSH ⚪</strong>
+                                    <small className="polarity-rules">CLICK A BUTTON TO FLIP ITS COLOR · MATCH THE TARGET COLOR</small>
+                                    <small className="polarity-goal">
+                                        {currentPolarityAttempt.waves} WAVES · {currentPolarityAttempt.waveDurationSeconds} SECONDS EACH · {currentPolarityTotalReward}⚡ REWARD
+                                    </small>
+                                    <span className="event-intro-action-slot">
+                                        {eventIntroTimeLeft > 0 ? (
+                                            <strong className="event-unlock-notice polarity-event-unlock-notice">YOU UNLOCKED A SECRET EVENT</strong>
+                                        ) : (
+                                            <button className="event-intro-action polarity-event-intro-action" type="button" onClick={startPolarityEvent}>START POLARITY RUSH</button>
+                                        )}
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+
+                        {gamePhase === "polarityEvent" && currentPolarityAttempt && (
+                            <div className="polarity-event">
+                                <div className="polarity-event-header">
+                                    <strong>⚫ POLARITY RUSH ⚪</strong>
+                                    <span className={`polarity-timer ${polarityTimeLeft <= 3 ? "is-urgent" : ""}`}>{Math.ceil(polarityTimeLeft)}s</span>
+                                </div>
+
+                                <div className="polarity-timer-track">
+                                    <div
+                                        className={`polarity-timer-fill polarity-timer-fill-${polarityTargetIsWhite ? "white" : "black"}`}
+                                        style={{ width: `${(polarityTimeLeft / currentPolarityAttempt.waveDurationSeconds) * 100}%` }}
+                                    />
+                                </div>
+
+                                <div className="polarity-event-stats">
+                                    <span>{`WAVE ${polarityWave} / ${currentPolarityAttempt.waves}`}</span>
+                                    <strong>MOVES: {polarityMoves}</strong>
+                                </div>
+
+                                <strong className={`polarity-target polarity-target-${polarityTargetIsWhite ? "white" : "black"}`}>
+                                    {`MAKE THEM ALL ${polarityTargetIsWhite ? "WHITE" : "BLACK"}!`}
+                                </strong>
+
+                                <div ref={polarityGridRef} className="polarity-rush-field">
+                                    {polarityButtons.map((button, index) => (
                                         <button
-                                            className={`small-button golden-small-button ${goldenButton.isBreaking ? "is-breaking" : ""}`}
+                                            key={button.id}
+                                            className={`polarity-button ${button.isWhite ? "polarity-button-white" : "polarity-button-black"} ${button.isBreaking ? "is-breaking" : ""}`}
                                             type="button"
-                                            disabled={goldenButton.isBreaking}
-                                            aria-label="GOLDEN BUTTON"
-                                            onPointerDown={(event) => {
-                                                if (event.button === 0) {
-                                                    event.currentTarget.setPointerCapture(event.pointerId);
-                                                }
-                                            }}
-                                            onPointerUp={(event) => {
-                                                if (event.button === 0) {
-                                                    handleGoldenButtonPress(goldenButton.id);
-                                                }
-                                            }}
-                                            onClick={(event) => {
-                                                if (event.detail === 0) {
-                                                    handleGoldenButtonPress(goldenButton.id);
-                                                }
+                                            data-polarity-index={index}
+                                            onClick={() => handlePolarityButtonPress(index)}
+                                            disabled={isPolarityResolving}
+                                            aria-label={`Polarity button ${index + 1}, currently ${button.isWhite ? "white" : "black"}`}
+                                            style={{
+                                                left: `${button.position.x}%`,
+                                                top: `${button.position.y}%`,
+                                                animationDelay: button.isBreaking ? `${index * POLARITY_EVENT.buttonBreakStaggerMs}ms` : undefined,
+                                                animationDuration: button.isBreaking ? `${POLARITY_EVENT.breakDurationMs}ms` : undefined,
                                             }}
                                         />
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
+
+                                <p className="polarity-event-hint">CLICKING THE TARGET COLOR FLIPS IT BACK — MOVE FAST</p>
                             </div>
-                        </>
-                    )}
+                        )}
 
-                    {isFingerExhausted && gamePhase !== "redLightIntro" && gamePhase !== "redLightEvent" && gamePhase !== "redLightResult" && gamePhase !== "polarityIntro" && gamePhase !== "polarityEvent" && gamePhase !== "polarityResult" && (
-                        <button
-                            className="start-area"
-                            type="button"
-                            onClick={startNewRun}
-                            disabled={
-                                restartCooldown > 0 ||
-                                isRunActive
-                            }
-                        >
-                            <span className="start-message">
-                                {startMessage}
-                            </span>
-                        </button>
-                    )}
-
-                    {!isFingerExhausted &&
-                        gamePhase === "stageComplete" && (
-                            <button
-                                className="start-area"
-                                type="button"
-                                onClick={startNextStage}
-                            >
-                                <span className="start-message">
-                                    {stageMessage}
-
-                                    <small className="continue-hint">
-                                        CLICK TO FACE THE NEXT MISTAKE
+                        {gamePhase === "polarityResult" && currentPolarityAttempt && (
+                            <button className={`start-area polarity-result polarity-result-${polarityResult}`} type="button" onClick={leavePolarityEvent}>
+                                <span className="start-message polarity-result-message">
+                                    <small className="secret-event-label polarity-secret-label">POLARITY RUSH</small>
+                                    <strong className="polarity-intro-title">
+                                        {polarityResult === "success" ? "✅ PERFECTLY UNDECIDED" : "❌ POLARITY COLLAPSE"}
+                                    </strong>
+                                    <small className="polarity-rules">
+                                        {polarityResult === "success" ? `ALL BUTTONS DESTROYED · +${currentPolarityTotalReward}⚡` : `TIME EXPIRED · TICKET ${activePolarityEventIndex + 1} USED`}
                                     </small>
+                                    <small className="continue-hint">CLICK TO RETURN TO THE LAB</small>
                                 </span>
                             </button>
                         )}
 
-                    {gamePhase === "victory" && (
-                        <button className="start-area victory-screen" type="button" onClick={returnToStageSelection}>
-                            <span className="start-message victory-message">
-                                <small className="secret-event-label">ALL STAGES CLEARED</small>
-                                <strong className="victory-title">🏆 YOU DEFEATED EVERY BUTTON</strong>
-                                <small className="continue-hint">CLICK TO RETURN TO STAGE SELECT</small>
-                            </span>
-                        </button>
-                    )}
+                        {gamePhase === "redLightIntro" && currentRedLightEvent && (
+                            <div className="start-area event-intro-screen red-light-intro">
+                                <div className="start-message red-light-intro-message">
+                                    <small className="secret-event-label red-light-secret-label">SUSPICIOUS CLICK ACTIVITY</small>
+                                    <strong className="red-light-intro-title">🚦 HUMAN CLICK VERIFICATION</strong>
+                                    <small className="red-light-trigger">
+                                        {currentRedLightEvent.requiredTotalPresses} TOTAL PRESSES DETECTED
+                                    </small>
+                                    <small className="red-light-reason">
+                                        The chamber is starting to doubt you are human.
+                                        <br />
+                                        Honestly, so are we. Pass verification to continue.
+                                    </small>
+                                    <small className="red-light-rules">
+                                        CLICK ON GREEN · RED MEANS STOP · CAUGHT LOCKS YOU FOR {RED_LIGHT_EVENT.caughtDurationMs / 1000} SECONDS
+                                    </small>
+                                    <small className="red-light-goal">
+                                        {currentRedLightEvent.targetHits} SAFE CLICKS · {RED_LIGHT_EVENT.durationSeconds} SECONDS · {currentRedLightEvent.reward}⚡ REWARD
+                                    </small>
+                                    <span className="event-intro-action-slot">
+                                        {eventIntroTimeLeft > 0 ? (
+                                            <strong className="event-unlock-notice">SECURITY CHECK INITIALIZING...</strong>
+                                        ) : (
+                                            <button className="event-intro-action" type="button" onClick={startRedLightEvent}>START VERIFICATION</button>
+                                        )}
+                                    </span>
+                                </div>
+                            </div>
+                        )}
 
-                    {!isFingerExhausted && isRunActive && activeSmallButtons.length > 0 && (
-                        <div className="small-button-phase">
-                            {activeSmallButtons.map((smallButton) => {
-                                const buttonType =
-                                    SMALL_BUTTONS[smallButton.typeIndex];
+                        {gamePhase === "redLightEvent" && currentRedLightEvent && (
+                            <div className={`red-light-event red-light-event-${redLightState}`}>
+                                <div className="red-light-event-header">
+                                    <strong>🚦 HUMAN CLICK VERIFICATION</strong>
+                                    <span>{redLightTimeLeft}s</span>
+                                </div>
 
-                                return (
-                                    <div
-                                        key={smallButton.id}
-                                        className="small-target"
-                                        style={{
-                                            left: `${smallButton.position.x}%`,
-                                            top: `${smallButton.position.y}%`,
-                                        }}
-                                    >
-                                        <div className="small-meter">
-                                            <div
-                                                className="small-meter-fill"
-                                                style={{
-                                                    width: `${(
-                                                        smallButton.durability /
-                                                        smallButton.maxDurability
-                                                    ) * 100}%`,
+                                <div className="red-light-progress">
+                                    <span>SAFE CLICKS</span>
+                                    <strong>{redLightHits} / {currentRedLightEvent.targetHits}</strong>
+                                </div>
+
+                                <button
+                                    className={`red-light-button red-light-button-${redLightState}`}
+                                    type="button"
+                                    onClick={handleRedLightPress}
+                                    disabled={redLightState === "caught"}
+                                    aria-label={redLightState === "red" ? "Do not press during red light" : "Press during green light"}
+                                >
+                                    {redLightState === "green" && "CLICK!"}
+                                    {redLightState === "warning" && "LAST CHANCE!"}
+                                    {redLightState === "red" && "DON'T MOVE!"}
+                                    {redLightState === "caught" && "CAUGHT!"}
+                                </button>
+
+                                <p className="red-light-status">
+                                    {redLightState === "green" && "GREEN LIGHT — GO!"}
+                                    {redLightState === "warning" && "WARNING — RED LIGHT INCOMING!"}
+                                    {redLightState === "red" && "RED LIGHT — HANDS OFF!"}
+                                    {redLightState === "caught" && `INPUT LOCKED FOR ${RED_LIGHT_EVENT.caughtDurationMs / 1000} SECONDS`}
+                                </p>
+                            </div>
+                        )}
+
+                        {gamePhase === "redLightResult" && currentRedLightEvent && (
+                            <button className={`start-area red-light-result red-light-result-${redLightResult}`} type="button" onClick={startNormalRun}>
+                                <span className="start-message red-light-result-message">
+                                    <small className="secret-event-label red-light-secret-label">SECRET EVENT</small>
+                                    <strong className="red-light-intro-title">
+                                        {redLightResult === "success" ? "✅ HUMAN ENOUGH" : "❌ BOT BEHAVIOR DETECTED"}
+                                    </strong>
+                                    <small className="red-light-rules">
+                                        {redLightResult === "success" ? `VERIFICATION PASSED · +${currentRedLightEvent.reward}⚡` : `TIME EXPIRED · ${redLightHits} / ${currentRedLightEvent.targetHits} SAFE CLICKS`}
+                                    </small>
+                                    <small className="continue-hint">CLICK TO START THE NEXT RUN</small>
+                                </span>
+                            </button>
+                        )}
+
+                        {!isFingerExhausted && gamePhase === "goldenRushIntro" && (
+                            <div className="start-area event-intro-screen golden-rush-intro">
+                                <div className="start-message golden-rush-intro-message">
+                                    <small className="secret-event-label">SECRET EVENT</small>
+                                    <strong className="golden-rush-intro-title">✨ GOLDEN RUSH ✨</strong>
+                                    <small className="golden-rush-rules">
+                                        ONE HIT · DOUBLE ENERGY · {GOLDEN_RUSH.durationSeconds} SECONDS
+                                    </small>
+                                    <span className="event-intro-action-slot">
+                                        {eventIntroTimeLeft > 0 ? (
+                                            <strong className="event-unlock-notice golden-event-unlock-notice">YOU UNLOCKED A SECRET EVENT</strong>
+                                        ) : (
+                                            <button className="event-intro-action golden-event-intro-action" type="button" onClick={startGoldenRush}>START GOLDEN RUSH</button>
+                                        )}
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+
+                        {gamePhase === "goldenRush" && (
+                            <>
+                                <div className="golden-rush-banner">
+                                    <strong>✨ GOLDEN RUSH ✨</strong>
+                                    <span>{goldenRushTimeLeft}s</span>
+                                </div>
+
+                                <div className="small-button-phase golden-button-phase">
+                                    {goldenButtons.map((goldenButton) => (
+                                        <div
+                                            key={goldenButton.id}
+                                            className="small-target"
+                                            style={{
+                                                left: `${goldenButton.position.x}%`,
+                                                top: `${goldenButton.position.y}%`,
+                                            }}
+                                        >
+                                            <button
+                                                className={`small-button golden-small-button ${goldenButton.isBreaking ? "is-breaking" : ""}`}
+                                                type="button"
+                                                disabled={goldenButton.isBreaking}
+                                                aria-label="GOLDEN BUTTON"
+                                                onPointerDown={(event) => {
+                                                    if (event.button === 0) {
+                                                        event.currentTarget.setPointerCapture(event.pointerId);
+                                                    }
+                                                }}
+                                                onPointerUp={(event) => {
+                                                    if (event.button === 0) {
+                                                        handleGoldenButtonPress(goldenButton.id);
+                                                    }
+                                                }}
+                                                onClick={(event) => {
+                                                    if (event.detail === 0) {
+                                                        handleGoldenButtonPress(goldenButton.id);
+                                                    }
                                                 }}
                                             />
                                         </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
 
-                                        <button
-                                            className={`small-button ${buttonType.colorClass} ${smallButton.isBreaking ?
-                                                 "is-breaking" : ""}`}
-                                            type="button"
-                                            disabled={smallButton.isBreaking}
-                                            aria-label={buttonType.name}
-                                            onPointerDown={(event) => {
-                                                if (event.button === 0) {
-                                                    event.currentTarget.setPointerCapture(
-                                                        event.pointerId,
-                                                    );
-                                                }
+                        {isFingerExhausted && gamePhase !== "intro" && gamePhase !== "redLightIntro" && gamePhase !== "redLightEvent" && gamePhase !== "redLightResult" && gamePhase !== "polarityIntro" && gamePhase !== "polarityEvent" && gamePhase !== "polarityResult" && gamePhase !== "demoEnding" && (
+                            <button
+                                className="start-area"
+                                type="button"
+                                onClick={startNewRun}
+                                disabled={
+                                    restartCooldown > 0 ||
+                                    isRunActive
+                                }
+                            >
+                                <span className="start-message">
+                                    {startMessage}
+                                </span>
+                            </button>
+                        )}
+
+                        {!isFingerExhausted &&
+                            gamePhase === "stageComplete" && (
+                                <button
+                                    className="start-area"
+                                    type="button"
+                                    onClick={startNextStage}
+                                >
+                                    <span className="start-message">
+                                        {stageMessage}
+
+                                        <small className="continue-hint">
+                                            CLICK TO FACE THE NEXT MISTAKE
+                                        </small>
+                                    </span>
+                                </button>
+                            )}
+
+                        {gamePhase === "demoEnding" && (
+                            <div
+                                className="start-area ending-screen"
+                                role="dialog"
+                                aria-modal="true"
+                                aria-labelledby="demo-ending-title"
+                            >
+                                <div className="ending-card">
+                                    <small className="ending-label">DEMO COMPLETE</small>
+
+                                    <strong id="demo-ending-title" className="ending-title">
+                                        🏆 YOU DEFEATED THE VOID EMPEROR
+                                    </strong>
+
+                                    <p className="ending-copy">
+                                        THE CHAMBER DOORS ARE OPEN. YOU BEAT THE DEMO. YOU ARE FINALLY FREE.
+                                    </p>
+
+                                    <p className="ending-joke">
+                                        Unfortunately, your finger has already developed a clicking problem.
+                                    </p>
+
+                                    <p className="ending-credit">
+                                        Built by{" "}
+                                        <a
+                                            href="https://github.com/Khalil-Abboud"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                        >
+                                            Khalil Abboud
+                                        </a>
+                                    </p>
+
+                                    <div className="ending-action-slot">
+                                        {endingChoiceTimeLeft > 0 ? (
+                                            <strong className="ending-wait">
+                                                FREEDOM PROCESSING... {endingChoiceTimeLeft}
+                                            </strong>
+                                        ) : (
+                                            <div className="ending-actions">
+                                                <button
+                                                    className="ending-leave-button"
+                                                    type="button"
+                                                    onClick={leaveDemoEnding}
+                                                >
+                                                    LEAVE THE CHAMBER
+                                                </button>
+
+                                                <button
+                                                    className="ending-endless-button"
+                                                    type="button"
+                                                    onClick={continueToEndlessMode}
+                                                >
+                                                    KEEP CLICKING — ENDLESS MODE
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {!isFingerExhausted && isRunActive && activeSmallButtons.length > 0 && (
+                            <div className="small-button-phase">
+                                {activeSmallButtons.map((smallButton) => {
+                                    const buttonType =
+                                        SMALL_BUTTONS[smallButton.typeIndex];
+
+                                    return (
+                                        <div
+                                            key={smallButton.id}
+                                            className="small-target"
+                                            style={{
+                                                left: `${smallButton.position.x}%`,
+                                                top: `${smallButton.position.y}%`,
                                             }}
-                                            onPointerUp={(event) => {
-                                                if (event.button === 0) {
-                                                    handleSmallButtonPress(smallButton.id);
-                                                }
-                                            }}
-                                            onClick={(event) => {
-                                                if (event.detail === 0) {
-                                                    handleSmallButtonPress(smallButton.id);
-                                                }
+                                        >
+                                            <div className="small-meter">
+                                                <div
+                                                    className="small-meter-fill"
+                                                    style={{
+                                                        width: `${(
+                                                            smallButton.durability /
+                                                            smallButton.maxDurability
+                                                        ) * 100}%`,
+                                                    }}
+                                                />
+                                            </div>
+
+                                            <button
+                                                className={`small-button ${buttonType.colorClass} ${smallButton.isBreaking ?
+                                                    "is-breaking" : ""}`}
+                                                type="button"
+                                                disabled={smallButton.isBreaking}
+                                                aria-label={buttonType.name}
+                                                onPointerDown={(event) => {
+                                                    if (event.button === 0) {
+                                                        event.currentTarget.setPointerCapture(
+                                                            event.pointerId,
+                                                        );
+                                                    }
+                                                }}
+                                                onPointerUp={(event) => {
+                                                    if (event.button === 0) {
+                                                        handleSmallButtonPress(smallButton.id);
+                                                    }
+                                                }}
+                                                onClick={(event) => {
+                                                    if (event.detail === 0) {
+                                                        handleSmallButtonPress(smallButton.id);
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {!isFingerExhausted && gamePhase === "boss" && (
+                            <>
+                                <div className="meter durability-meter">
+                                    <div className="meter-label">
+                                        <span>{currentButton.name}</span>
+
+                                        <strong>
+                                            {Math.ceil(buttonDurability)} / {currentButton.durability}
+                                        </strong>
+                                    </div>
+
+                                    <div className="meter-track">
+                                        <div
+                                            className="meter-fill durability-fill"
+                                            style={{
+                                                width: `${(
+                                                    buttonDurability /
+                                                    currentButton.durability
+                                                ) * 100}%`,
                                             }}
                                         />
                                     </div>
-                                );
-                            })}
-                        </div>
-                    )}
-
-                    {!isFingerExhausted && gamePhase === "boss" && (
-                        <>
-                            <div className="meter durability-meter">
-                                <div className="meter-label">
-                                    <span>{currentButton.name}</span>
-
-                                    <strong>
-                                        {buttonDurability} / {currentButton.durability}
-                                    </strong>
                                 </div>
 
-                                <div className="meter-track">
-                                    <div
-                                        className="meter-fill durability-fill"
-                                        style={{
-                                            width: `${(
-                                                buttonDurability /
-                                                currentButton.durability
-                                            ) * 100}%`,
-                                        }}
-                                    />
-                                </div>
-                            </div>
+                                <button
+                                    ref={bossButtonRef}
+                                    className={`main-button play-button ${currentButton.colorClass
+                                        } ${isButtonBreaking ? "is-breaking" : ""
+                                        }`}
+                                    type="button"
+                                    onPointerDown={(event) => {
+                                        if (event.button === 0) {
+                                            event.currentTarget.setPointerCapture(
+                                                event.pointerId,
+                                            );
+                                        }
+                                    }}
+                                    onPointerUp={(event) => {
+                                        if (event.button === 0) {
+                                            handlePress();
+                                        }
+                                    }}
+                                    onClick={(event) => {
+                                        if (event.detail === 0) {
+                                            handlePress();
+                                        }
+                                    }}
+                                    disabled={isButtonBreaking}
+                                >
+                                    {isButtonBreaking ? "CRACK!" : currentButton.buttonText}
+                                </button>
+                            </>
+                        )}
+                    </div>
+
+                    <RunData
+                        className="compact-run-data"
+                        currentScore={runScore}
+                        bestScore={bestScore}
+                        totalPresses={totalManualPresses}
+                    />
+
+                    <div className="upgrades">
+                        <section className="upgrade">
+                            <h2>⏱️ BUTTON SPAWN RATE</h2>
+
+                            <p>
+                                {`Level: ${spawnSpeedLevel} / ${spawnSpeedLevels.length - 1}`}
+                            </p>
+
+                            <p>
+                                {isSpawnSpeedMax
+                                    ? `+${currentSpawnSpeedBonus}% spawn rate`
+                                    : `Next: +${nextSpawnSpeedBonus}% spawn rate`}
+                            </p>
 
                             <button
-                                ref={bossButtonRef}
-                                className={`main-button play-button ${currentButton.colorClass
-                                    } ${isButtonBreaking ? "is-breaking" : ""
-                                    }`}
                                 type="button"
-                                onPointerDown={(event) => {
-                                    if (event.button === 0) {
-                                        event.currentTarget.setPointerCapture(
-                                            event.pointerId,
-                                        );
-                                    }
-                                }}
-                                onPointerUp={(event) => {
-                                    if (event.button === 0) {
-                                        handlePress();
-                                    }
-                                }}
-                                onClick={(event) => {
-                                    if (event.detail === 0) {
-                                        handlePress();
-                                    }
-                                }}
-                                disabled={isButtonBreaking}
+                                onClick={buySpawnSpeedUpgrade}
+                                disabled={
+                                    isRunActive ||
+                                    isSpawnSpeedMax ||
+                                    energy < spawnSpeedUpgradeCost
+                                }
                             >
-                                {isButtonBreaking ? "CRACK!" : currentButton.buttonText}
+                                {isSpawnSpeedMax
+                                    ? "MAX LEVEL"
+                                    : `UPGRADE — ${spawnSpeedUpgradeCost}⚡`}
                             </button>
-                        </>
-                    )}
-                </div>
+                        </section>
 
-                <div className="upgrades">
-                    <section className="upgrade">
-                        <h2>BUTTON SPAWN RATE</h2>
+                        <section className="upgrade chain-lightning-upgrade">
+                            <h2>⚡ CHAIN LIGHTNING</h2>
 
-                        <p>
-                            {`Level: ${spawnSpeedLevel} / ${spawnSpeedLevels.length - 1}`}
-                        </p>
+                            <p>
+                                {`Level: ${chainLightningLevel} / ${chainLightningLevels.length - 1}`}
+                            </p>
 
-                        <p>
-                            {isSpawnSpeedMax
-                                ? "Maximum level reached"
-                                : `Next: +${nextSpawnSpeedBonus}% spawn rate`}
-                        </p>
+                            <p>
+                                {isChainLightningMax
+                                    ? `${currentChainLightning.damageMultipliers.length} jumps · ${currentChainLightning.damageMultipliers.map((multiplier) => `${multiplier * 100}%`).join(" → ")} damage`
+                                    : `Next: Jump ${nextChainJumpIndex + 1} deals ${nextChainJumpDamageMultiplier * 100}% damage`}
+                            </p>
 
-                        <button
-                            type="button"
-                            onClick={buySpawnSpeedUpgrade}
-                            disabled={
-                                isRunActive ||
-                                isSpawnSpeedMax ||
-                                energy < spawnSpeedUpgradeCost
-                            }
-                        >
-                            {isSpawnSpeedMax
-                                ? "MAX LEVEL"
-                                : `UPGRADE — ${spawnSpeedUpgradeCost}⚡`}
-                        </button>
-                    </section>
+                            <button
+                                type="button"
+                                onClick={buyChainLightning}
+                                disabled={
+                                    isRunActive ||
+                                    isChainLightningMax ||
+                                    energy < chainLightningUpgradeCost
+                                }
+                            >
+                                {isChainLightningMax
+                                    ? "MAX LEVEL"
+                                    : chainLightningLevel === 0
+                                        ? `UNLOCK — ${chainLightningUpgradeCost}⚡`
+                                        : `UPGRADE — ${chainLightningUpgradeCost}⚡`}
+                            </button>
+                        </section>
 
-                    <section className="upgrade">
-                        <h2>⚡ CHAIN LIGHTNING</h2>
+                        <section className="upgrade auto-finger-upgrade">
+                            <h2>🖱️ AUTO FINGER</h2>
 
-                        <p>
-                            {`Level: ${chainLightningLevel} / ${chainLightningLevels.length - 1}`}
-                        </p>
+                            <p>{`Level: ${autoFingerLevel} / ${autoFingerLevels.length - 1}`}</p>
 
-                        <p>
-                            {isChainLightningMax
-                                ? "Maximum level reached"
-                                : `Next: Jump ${nextChainJumpIndex + 1} deals ${nextChainJumpDamageMultiplier * 100}% damage`}
-                        </p>
+                            <p>{autoFingerDescription}</p>
 
-                        <button
-                            type="button"
-                            onClick={buyChainLightning}
-                            disabled={
-                                isRunActive ||
-                                isChainLightningMax ||
-                                energy < chainLightningUpgradeCost
-                            }
-                        >
-                            {isChainLightningMax
-                                ? "MAX LEVEL"
-                                : chainLightningLevel === 0
-                                    ? `UNLOCK — ${chainLightningUpgradeCost}⚡`
-                                    : `UPGRADE — ${chainLightningUpgradeCost}⚡`}
-                        </button>
-                    </section>
+                            <button
+                                type="button"
+                                onClick={buyAutoFingerUpgrade}
+                                disabled={isRunActive || isAutoFingerMax || energy < autoFingerUpgradeCost}
+                            >
+                                {isAutoFingerMax
+                                    ? "MAX LEVEL"
+                                    : autoFingerLevel === 0
+                                        ? `UNLOCK — ${autoFingerUpgradeCost}⚡`
+                                        : `UPGRADE — ${autoFingerUpgradeCost}⚡`}
+                            </button>
+                        </section>
 
-                    <section className="upgrade">
-                        <h2>💚 HEALING BUTTONS</h2>
+                        <section className="upgrade fireball-upgrade">
+                            <h2>🔥 FIREBALL DROP</h2>
 
-                        <p>{`Level: ${healingButtonLevel} / ${healingButtonLevels.length - 1}`}</p>
+                            <p>{`Level: ${fireballLevel} / ${fireballLevels.length - 1}`}</p>
 
-                        <p>
-                            {isHealingButtonMax
-                                ? `${currentHealingButton.spawnChance * 100}% spawn chance · +${healingButtonHealAmount} HP`
-                                : `Next: ${nextHealingButton.spawnChance * 100}% spawn chance · +${healingButtonHealAmount} HP`}
-                        </p>
+                            <p>{fireballDescription}</p>
 
-                        <button
-                            type="button"
-                            onClick={buyHealingButtonUpgrade}
-                            disabled={isRunActive || isHealingButtonMax || energy < healingButtonUpgradeCost}
-                        >
-                            {isHealingButtonMax
-                                ? "MAX LEVEL"
-                                : healingButtonLevel === 0
-                                    ? `UNLOCK — ${healingButtonUpgradeCost}⚡`
-                                    : `UPGRADE — ${healingButtonUpgradeCost}⚡`}
-                        </button>
-                    </section>
+                            <button
+                                type="button"
+                                onClick={buyFireballUpgrade}
+                                disabled={isRunActive || isFireballMax || energy < fireballUpgradeCost}
+                            >
+                                {isFireballMax
+                                    ? "MAX LEVEL"
+                                    : fireballLevel === 0
+                                        ? `UNLOCK — ${fireballUpgradeCost}⚡`
+                                        : `UPGRADE — ${fireballUpgradeCost}⚡`}
+                            </button>
+                        </section>
 
-                    <section className="upgrade">
-                        <h2>PRESS POWER</h2>
+                        <section className="upgrade">
+                            <h2>💚 HEALING BUTTONS</h2>
 
-                        <p>Level: {powerLevel}</p>
-                        <p>
-                            {`Next: ${pressPower} → ${pressPower + POWER_UPGRADE.powerPerLevel} damage`}
-                        </p>
+                            <p>{`Level: ${healingButtonLevel} / ${healingButtonLevels.length - 1}`}</p>
 
-                        <button
-                            type="button"
-                            onClick={buyPowerUpgrade}
-                            disabled={
-                                isRunActive ||
-                                energy < powerUpgradeCost
-                            }
-                        >
-                            UPGRADE — {powerUpgradeCost}⚡
-                        </button>
-                    </section>
+                            <p>
+                                {isHealingButtonMax
+                                    ? `${currentHealingButton.spawnChance * 100}% spawn chance · +${healingButtonHealAmount} HP`
+                                    : `Next: ${nextHealingButton.spawnChance * 100}% spawn chance · +${healingButtonHealAmount} HP`}
+                            </p>
 
-                    <section className="upgrade">
-                        <h2>FINGER HEALTH</h2>
+                            <button
+                                type="button"
+                                onClick={buyHealingButtonUpgrade}
+                                disabled={isRunActive || isHealingButtonMax || energy < healingButtonUpgradeCost}
+                            >
+                                {isHealingButtonMax
+                                    ? "MAX LEVEL"
+                                    : healingButtonLevel === 0
+                                        ? `UNLOCK — ${healingButtonUpgradeCost}⚡`
+                                        : `UPGRADE — ${healingButtonUpgradeCost}⚡`}
+                            </button>
+                        </section>
 
-                        <p>Level: {healthLevel}</p>
-                        <p>
-                            {`Next: ${maxFingerHealth} → ${maxFingerHealth + HEALTH_UPGRADE.healthPerLevel} max health`}
-                        </p>
+                        <section className="upgrade">
+                            <h2>💪 PRESS POWER</h2>
 
-                        <button
-                            type="button"
-                            onClick={buyHealthUpgrade}
-                            disabled={
-                                isRunActive ||
-                                energy < healthUpgradeCost
-                            }
-                        >
-                            UPGRADE — {healthUpgradeCost}⚡
-                        </button>
-                    </section>
+                            <p>Level: {powerLevel}</p>
+                            <p>
+                                {`Next: ${pressPower} → ${pressPower + POWER_UPGRADE.powerPerLevel} damage`}
+                            </p>
 
-                    <section className="upgrade polarity-upgrade">
-                        <h2>⚫ POLARITY RUSH ⚪</h2>
-                        <p>{`Tickets used: ${polarityEventsPlayed} / ${POLARITY_EVENT.attempts.length}`}</p>
-                        <p>
-                            {isPolaritySoldOut
-                                ? "All event tickets completed"
-                                : `Next: Pay ${nextPolarityAttempt.cost}⚡ · Win ${nextPolarityTotalReward}⚡`}
-                        </p>
+                            <button
+                                type="button"
+                                onClick={buyPowerUpgrade}
+                                disabled={
+                                    isRunActive ||
+                                    energy < powerUpgradeCost
+                                }
+                            >
+                                UPGRADE — {powerUpgradeCost}⚡
+                            </button>
+                        </section>
 
-                        <button
-                            type="button"
-                            onClick={buyPolarityEvent}
-                            disabled={isRunActive || isEventScreenOpen || isPolaritySoldOut || energy < (nextPolarityAttempt?.cost ?? 0)}
-                        >
-                            {isPolaritySoldOut ? "SOLD OUT" : `BUY EVENT TICKET — ${nextPolarityAttempt.cost}⚡`}
-                        </button>
-                    </section>
+                        <section className="upgrade">
+                            <h2>❤️ FINGER HEALTH</h2>
 
-                    <section className="upgrade">
-                        <h2>FINGER REPAIR KIT</h2>
-                        <p>Owned: {healItemCount}</p>
-                        <p>
-                            {`Next: +1 kit (restores ${REPAIR_KIT.healPercentage * 100}% HP)`}
-                        </p>
+                            <p>Level: {healthLevel}</p>
+                            <p>
+                                {`Next: ${maxFingerHealth} → ${maxFingerHealth + HEALTH_UPGRADE.healthPerLevel} max health`}
+                            </p>
 
-                        <button
-                            type="button"
-                            onClick={buyHealItem}
-                            disabled={
-                                isRunActive ||
-                                energy < healItemCost
-                            }
-                        >
-                            BUY — {healItemCost}⚡
-                        </button>
-                    </section>
-                </div>
+                            <button
+                                type="button"
+                                onClick={buyHealthUpgrade}
+                                disabled={
+                                    isRunActive ||
+                                    energy < healthUpgradeCost
+                                }
+                            >
+                                UPGRADE — {healthUpgradeCost}⚡
+                            </button>
+                        </section>
+
+                        <section className="upgrade polarity-upgrade">
+                            <h2>⚫ POLARITY RUSH EVENT ⚪</h2>
+                            <p>{`Tickets used: ${polarityEventsPlayed} / ${POLARITY_EVENT.attempts.length}`}</p>
+                            <p>
+                                {isPolaritySoldOut
+                                    ? `${POLARITY_EVENT.attempts.length} event tickets completed`
+                                    : `Next: Pay ${nextPolarityAttempt.cost}⚡ · Win ${nextPolarityTotalReward}⚡`}
+                            </p>
+
+                            <button
+                                type="button"
+                                onClick={buyPolarityEvent}
+                                disabled={isRunActive || isEventScreenOpen || isPolaritySoldOut || energy < (nextPolarityAttempt?.cost ?? 0)}
+                            >
+                                {isPolaritySoldOut ? "SOLD OUT" : `BUY EVENT TICKET — ${nextPolarityAttempt.cost}⚡`}
+                            </button>
+                        </section>
+
+                        <section className="upgrade">
+                            <h2>🩹 FINGER REPAIR KIT</h2>
+                            <p>Owned: {healItemCount}</p>
+                            <p>
+                                {`Next: +1 kit (restores ${REPAIR_KIT.healPercentage * 100}% HP)`}
+                            </p>
+
+                            <button
+                                type="button"
+                                onClick={buyHealItem}
+                                disabled={
+                                    isRunActive ||
+                                    energy < healItemCost
+                                }
+                            >
+                                BUY — {healItemCost}⚡
+                            </button>
+                        </section>
+                    </div>
 
                 </section>
             </div>
