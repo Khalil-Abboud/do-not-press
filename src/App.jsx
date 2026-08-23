@@ -589,16 +589,27 @@ export default function App() {
             return;
         }
 
-        const shouldPlay =
+        const isNormalGameplayMusic =
             isRunActive &&
             (gamePhase === "smallButtons" || gamePhase === "boss" || gamePhase === "goldenRush");
 
+        const isPolarityEventMusic = gamePhase === "polarityEvent";
+        const isRedLightEventMusic =
+            gamePhase === "redLightEvent" &&
+            (redLightState === "green" || redLightState === "warning");
+
+        const shouldPlay =
+            isNormalGameplayMusic ||
+            isPolarityEventMusic ||
+            isRedLightEventMusic;
+
         if (shouldPlay) {
+            music.volume = 0.2;
             music.play();
         } else {
             music.pause();
         }
-    }, [isRunActive, gamePhase]);
+    }, [isRunActive, gamePhase, redLightState]);
 
     function showRewardPopup(amount, position) {
         if (!position) {
