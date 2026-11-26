@@ -52,6 +52,40 @@ button {
     width: min(540px, 100%);
 }
 
+.language-panel {
+    width: min(480px, 100%);
+}
+
+.language-subtitle {
+    margin: 12px 0 0;
+    color: #d5d7dc;
+    font-size: clamp(18px, 4vw, 24px);
+}
+
+.language-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.language-options .intro-enter-button {
+    min-height: 48px;
+    margin-top: 0;
+    padding-inline: 8px;
+    font-size: 16px;
+}
+
+.language-options .intro-enter-button:focus-visible {
+    outline: 2px solid #ffc857;
+    outline-offset: 4px;
+}
+
+.language-options [lang="ar"] {
+    font-family: inherit;
+    letter-spacing: normal;
+}
+
 .intro-panel-punishment {
     animation: intro-punishment-entry 360ms ease-out;
 }
@@ -344,7 +378,7 @@ button {
     background: #1b1f26;
     color: #f4f1ea;
     cursor: pointer;
-    text-align: left;
+    text-align: start;
     transition: border-color 120ms, background 120ms, transform 80ms;
 }
 
@@ -2681,7 +2715,7 @@ h1 {
         grid-template-columns: minmax(0, 1fr) 160px;
         align-items: center;
         column-gap: 24px;
-        text-align: left;
+        text-align: start;
     }
 
     .intro-panel-temptation .intro-kicker {
@@ -2727,7 +2761,7 @@ h1 {
             "action sentence";
         grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
         gap: 6px 18px;
-        text-align: left;
+        text-align: start;
     }
 
     .intro-panel-punishment .intro-violation-label {

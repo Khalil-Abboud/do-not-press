@@ -23,11 +23,22 @@ import { createPolarityRushButtons, togglePolarityButton, isPolarityWaveComplete
 import { findNearestAutoFingerTarget } from "./utils/autoFinger";
 import { chooseFireballLaneX, findButtonsInsideFireballLane, isPositionInsideFireballLane } from "./utils/fireball";
 import { loadGameSave, saveGameSave } from "./utils/storage";
+import arabic from "./data/arabic";
 import LightningEffect from "./components/LightningEffect";
 import AutoFinger from "./components/AutoFinger";
 import FireballDrop from "./components/FireballDrop";
 
 const initialGameSave = loadGameSave();
+const LANGUAGE_STORAGE_KEY = "doNotPressLanguage";
+
+function loadLanguage() {
+    try {
+        const savedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+        return savedLanguage === "ar" || savedLanguage === "en" ? savedLanguage : null;
+    } catch {
+        return null;
+    }
+}
 
 function getRandomDuration([minimum, maximum]) {
     return minimum + Math.random() * (maximum - minimum);
@@ -53,36 +64,36 @@ function getInitialGamePhase() {
 const EVENT_INTRO_DELAY_SECONDS = 2;
 const ENDING_CHOICE_DELAY_SECONDS = 2;
 
-function getIntroResistanceMessage(seconds) {
+function getIntroResistanceMessage(seconds, t) {
     const displayedSeconds = seconds.toFixed(1);
 
     if (seconds < 2) {
-        return `IMPRESSIVE SELF-CONTROL: ${displayedSeconds} SECONDS.`;
+        return t("IMPRESSIVE SELF-CONTROL: {time} SECONDS.", { time: displayedSeconds });
     }
 
     if (seconds < 10) {
-        return `WELL. THAT TOOK ${displayedSeconds} SECONDS.`;
+        return t("WELL. THAT TOOK {time} SECONDS.", { time: displayedSeconds });
     }
 
-    return `${displayedSeconds} SECONDS? CUTE. YOU STILL PRESSED IT.`;
+    return t("{time} SECONDS? CUTE. YOU STILL PRESSED IT.", { time: displayedSeconds });
 }
 
-function RunData({ className, currentScore, bestScore, totalPresses }) {
+function RunData({ className, currentScore, bestScore, totalPresses, t }) {
     return (
-        <section className={`run-data ${className}`} aria-label="Stage score and total presses">
+        <section className={`run-data ${className}`} aria-label={t("Stage score and total presses")}>
             <div className="stage-score">
-                <span>CURRENT SCORE</span>
+                <span>{t("CURRENT SCORE")}</span>
                 <strong>{currentScore}</strong>
             </div>
 
             <div className="run-data-secondary">
                 <div>
-                    <span>BEST SCORE</span>
+                    <span>{t("BEST SCORE")}</span>
                     <strong>{bestScore}</strong>
                 </div>
 
                 <div>
-                    <span>TOTAL PRESSES</span>
+                    <span>{t("TOTAL PRESSES")}</span>
                     <strong>{totalPresses}</strong>
                 </div>
             </div>
@@ -91,6 +102,56 @@ function RunData({ className, currentScore, bestScore, totalPresses }) {
 }
 
 export default function App() {
+    const [language, setLanguage] = useState(loadLanguage);
+    const isArabic = language === "ar";
+    const title = isArabic ? arabic["Do Not Press"] : "Do Not Press";
+
+    useEffect(() => {
+        document.documentElement.lang = language ?? "en";
+        document.title = title;
+    }, [language, title]);
+
+    function chooseLanguage(choice) {
+        setLanguage(choice);
+
+        try {
+            localStorage.setItem(LANGUAGE_STORAGE_KEY, choice);
+        } catch {
+            // The selection still applies for this visit when storage is unavailable.
+        }
+    }
+
+    if (!language) {
+        return (
+            <main className="intro-screen" aria-labelledby="language-title">
+                <section className="intro-panel language-panel">
+                    <h1 id="language-title" className="intro-title">Choose your language</h1>
+                    <p className="language-subtitle" lang="ar" dir="rtl">اختر لغة اللعبة</p>
+                    <div className="language-options">
+                        <button className="intro-enter-button" type="button" lang="en"
+                            onClick={() => chooseLanguage("en")}>
+                            English
+                        </button>
+                        <button className="intro-enter-button" type="button" lang="ar" dir="rtl"
+                            onClick={() => chooseLanguage("ar")}>
+                            العربية
+                        </button>
+                    </div>
+                </section>
+            </main>
+        );
+    }
+
+    return <Game language={language} />;
+}
+
+function Game({ language }) {
+    const isArabic = language === "ar";
+    function t(message, values) {
+        const text = isArabic ? arabic[message] ?? message : message;
+        return values ? text.replace(/\{(\w+)\}/g, (_, key) => values[key]) : text;
+    }
+
     const [presses, setPresses] = useState(0);
     const [totalManualPresses, setTotalManualPresses] = useState(initialGameSave.progress.totalManualPresses);
     const [runScore, setRunScore] = useState(0);
@@ -213,11 +274,11 @@ export default function App() {
     let autoFingerDescription;
 
     if (autoFingerLevel === 0) {
-        autoFingerDescription = `Next: ${Math.round(baseAutoFinger.damageMultiplier * 100)}% power · Click rate ${Number(baseAutoFingerClickRate.toFixed(2))}/sec`;
+        autoFingerDescription = t("Next: {power}% power · Click rate {rate}/sec", { power: Math.round(baseAutoFinger.damageMultiplier * 100), rate: Number(baseAutoFingerClickRate.toFixed(2)) });
     } else if (isAutoFingerMax) {
-        autoFingerDescription = `Power +${autoFingerPowerIncrease}% · Click speed +${autoFingerClickSpeedIncrease}%`;
+        autoFingerDescription = t("Power +{power}% · Click speed +{speed}%", { power: autoFingerPowerIncrease, speed: autoFingerClickSpeedIncrease });
     } else {
-        autoFingerDescription = `Next: Power +${autoFingerPowerIncrease}% · Click speed +${autoFingerClickSpeedIncrease}%`;
+        autoFingerDescription = t("Next: Power +{power}% · Click speed +{speed}%", { power: autoFingerPowerIncrease, speed: autoFingerClickSpeedIncrease });
     }
 
     const fireballLevels = FIREBALL_DROP.levels;
@@ -227,7 +288,14 @@ export default function App() {
     const describedFireball = nextFireball ?? currentFireball;
     const fireballUpgradeCost = nextFireball ? nextFireball.cost : 0;
     const fireballDamage = Math.max(FIREBALL_DROP.minimumDamage, pressPower * currentFireball.damageMultiplier);
-    const fireballDescription = `${isFireballMax ? "" : "Next: "}${Math.round(describedFireball.damageMultiplier * 100)}% power · ${describedFireball.attackIntervalMs / 1000}s · ${describedFireball.laneWidthPercent}% lane`;
+    const fireballDescription = t(
+        isFireballMax ? "{power}% power · {time}s · {width}% lane" : "Next: {power}% power · {time}s · {width}% lane",
+        {
+            power: Math.round(describedFireball.damageMultiplier * 100),
+            time: describedFireball.attackIntervalMs / 1000,
+            width: describedFireball.laneWidthPercent,
+        },
+    );
 
     const maxFingerHealth = HEALTH_UPGRADE.baseHealth + healthLevel * HEALTH_UPGRADE.healthPerLevel;
     const healthUpgradeCost = HEALTH_UPGRADE.baseCost * (healthLevel + 1);
@@ -283,13 +351,13 @@ export default function App() {
 
     if (restartCooldown > 0) {
         startMessage =
-            `FINGER RECOVERY... ${restartCooldown}`;
+            t("FINGER RECOVERY... {time}", { time: restartCooldown });
     } else if (gamePhase === "waiting") {
         startMessage =
-            "CLICK TO MAKE A BAD DECISION";
+            t("CLICK TO MAKE A BAD DECISION");
     } else {
         startMessage =
-            "READY TO SUFFER AGAIN?";
+            t("READY TO SUFFER AGAIN?");
     }
 
     useEffect(() => {
@@ -858,7 +926,7 @@ export default function App() {
     }
 
     function completeCurrentStage() {
-        setStageMessage(currentButton.defeatMessage);
+        setStageMessage(t(currentButton.defeatMessage));
         setActiveSmallButtons([]);
         setGoldenButtons([]);
         setGoldenRushTimeLeft(0);
@@ -867,7 +935,7 @@ export default function App() {
 
         if (buttonIndex === BUTTONS.length - 1) {
             setButtonDurability(currentButton.durability);
-            setStageMessage("THE VOID RESPAWNED. FREEDOM LASTED 0 SECONDS.");
+            setStageMessage(t("THE VOID RESPAWNED. FREEDOM LASTED 0 SECONDS."));
             setGamePhase("stageComplete");
             return;
         }
@@ -1602,7 +1670,7 @@ export default function App() {
     }, [fireballLevel, currentFireball.attackIntervalMs, currentFireball.laneWidthPercent, gamePhase, isRunActive]);
 
     return (
-        <main className="game">
+        <main className="game" dir={isArabic ? "rtl" : "ltr"}>
             <audio
                 ref={musicRef}
                 src="/audio/monkeys-spinning-monkeys.mp3"
@@ -1621,63 +1689,46 @@ export default function App() {
                     <section className={`intro-panel intro-panel-${introStep}`}>
                         {introStep === "temptation" ? (
                             <>
-                                <small className="intro-kicker">ONE SIMPLE INSTRUCTION</small>
+                                <small className="intro-kicker">{t("ONE SIMPLE INSTRUCTION")}</small>
 
-                                <h2 id="intro-title" className="intro-title">
-                                    DO NOT PRESS.
-                                </h2>
+                                <h2 id="intro-title" className="intro-title">{t("DO NOT PRESS.")}</h2>
 
-                                <p className="intro-taunt">
-                                    That’s it. Surely this will be enough.
-                                </p>
+                                <p className="intro-taunt">{t("That’s it. Surely this will be enough.")}</p>
 
                                 <button
                                     className="intro-button"
                                     type="button"
                                     onClick={revealIntroPunishment}
                                 >
-                                    <span>DO NOT</span>
-                                    <small>PRESS</small>
+                                    <span>{t("DO NOT")}</span>
+                                    <small>{t("PRESS")}</small>
                                 </button>
 
-                                <small className="intro-legal">
-                                    We trust you completely.
-                                </small>
+                                <small className="intro-legal">{t("We trust you completely.")}</small>
                             </>
                         ) : (
                             <>
-                                <small className="intro-kicker intro-violation-label">
-                                    ⚠ VIOLATION DETECTED
-                                </small>
+                                <small className="intro-kicker intro-violation-label">{t("⚠ VIOLATION DETECTED")}</small>
 
                                 <h2 id="intro-title" className="intro-title intro-punishment-title">
-                                    {getIntroResistanceMessage(introResistanceSeconds ?? 0)}
+                                    {getIntroResistanceMessage(introResistanceSeconds ?? 0, t)}
                                 </h2>
 
-                                <p className="intro-rule">
-                                    You ignored the only instruction. Your punishment has been approved.
-                                </p>
+                                <p className="intro-rule">{t("You ignored the only instruction. Your punishment has been approved.")}</p>
 
                                 <div className="intro-sentence">
-                                    <strong>WELCOME TO THE BUTTON TESTING DEPARTMENT</strong>
+                                    <strong>{t("WELCOME TO THE BUTTON TESTING DEPARTMENT")}</strong>
 
-                                    <p>
-                                        Break five cursed buttons. Turn finger pain into Press Energy.
-                                        Automate your bad decisions. Earn your freedom.
-                                    </p>
+                                    <p>{t("Break five cursed buttons. Turn finger pain into Press Energy. Automate your bad decisions. Earn your freedom.")}</p>
                                 </div>
 
-                                <p className="intro-punishment-joke">
-                                    Good news: there is an exit. Bad news: getting out won't be as easy as getting in.
-                                </p>
+                                <p className="intro-punishment-joke">{t("Good news: there is an exit. Bad news: getting out won't be as easy as getting in.")}</p>
 
                                 <button
                                     className="intro-enter-button"
                                     type="button"
                                     onClick={enterGameFromIntro}
-                                >
-                                    ACCEPT YOUR PUNISHMENT
-                                </button>
+                                >{t("ACCEPT YOUR PUNISHMENT")}</button>
                             </>
                         )}
                     </section>
@@ -1686,27 +1737,27 @@ export default function App() {
 
             <header className="game-header">
                 <div>
-                    <p className="small-label">THE FORBIDDEN BUTTON EXPERIMENT</p>
-                    <h1>DO NOT PRESS</h1>
-                    <p className="warning">You have been warned.</p>
+                    <p className="small-label">{t("THE FORBIDDEN BUTTON EXPERIMENT")}</p>
+                    <h1>{t("DO NOT PRESS")}</h1>
+                    <p className="warning">{t("You have been warned.")}</p>
                 </div>
             </header>
 
             <div className="game-layout">
                 <aside className="game-sidebar">
-                    <div className="energy sidebar-energy" aria-label={`${energy} press energy`}>
+                    <div className="energy sidebar-energy" aria-label={t("{energy} press energy", { energy })}>
                         <span>⚡</span>
                         <div>
                             <strong>{energy}</strong>
-                            <small>PRESS ENERGY</small>
+                            <small>{t("PRESS ENERGY")}</small>
                         </div>
                     </div>
 
                     <div className="stage-selector">
                         <div className="stage-selector-header">
-                            <p className="small-label">RUN ENTRY POINT</p>
-                            <h2>STAGE SELECT</h2>
-                            <p>Choose where the next run begins.</p>
+                            <p className="small-label">{t("RUN ENTRY POINT")}</p>
+                            <h2>{t("STAGE SELECT")}</h2>
+                            <p>{t("Choose where the next run begins.")}</p>
                         </div>
 
                         <div className="stage-list">
@@ -1723,14 +1774,14 @@ export default function App() {
                                         disabled={!isUnlocked || isStageSelectionLocked}
                                         aria-pressed={isSelected}
                                     >
-                                        <span className="stage-option-number">STAGE {String(stageIndex + 1).padStart(2, "0")}</span>
-                                        <strong>{isUnlocked ? stage.name : "???"}</strong>
+                                        <span className="stage-option-number">{t("STAGE {stage}", { stage: String(stageIndex + 1).padStart(2, "0") })}</span>
+                                        <strong>{isUnlocked ? t(stage.name) : "???"}</strong>
                                         <small>
                                             {!isUnlocked
-                                                ? `DEFEAT STAGE ${stageIndex} BOSS TO UNLOCK`
+                                                ? t("DEFEAT STAGE {stage} BOSS TO UNLOCK", { stage: stageIndex })
                                                 : isSelected
-                                                    ? isRunActive ? "CURRENT STAGE" : "STARTING POINT"
-                                                    : stageIndex === highestUnlockedStage ? "LATEST UNLOCK" : "UNLOCKED"}
+                                                    ? isRunActive ? t("CURRENT STAGE") : t("STARTING POINT")
+                                                    : stageIndex === highestUnlockedStage ? t("LATEST UNLOCK") : t("UNLOCKED")}
                                         </small>
                                     </button>
                                 );
@@ -1749,7 +1800,7 @@ export default function App() {
                                         type="button"
                                         onClick={handleRunExit}
                                     >
-                                        {isExitConfirmationOpen ? "CONFIRM EXIT" : "ABORT RUN"}
+                                        {isExitConfirmationOpen ? t("CONFIRM EXIT") : t("ABORT RUN")}
                                     </button>
                                 )}
 
@@ -1758,14 +1809,14 @@ export default function App() {
                                     type="button"
                                     onClick={() => setIsMusicMuted((currentValue) => !currentValue)}
                                     aria-pressed={isMusicMuted}
-                                    title={isMusicMuted ? "Unmute background music" : "Mute background music"}
+                                    title={isMusicMuted ? t("Unmute background music") : t("Mute background music")}
                                 >
-                                    {isMusicMuted ? "🔇 MUTED" : "🔊 MUSIC"}
+                                    {isMusicMuted ? t("🔇 MUTED") : t("🔊 MUSIC")}
                                 </button>
                             </div>
 
                             <div className="health-value">
-                                <span>FINGER HEALTH</span>
+                                <span>{t("FINGER HEALTH")}</span>
 
                                 <strong>
                                     {fingerHealth.toFixed(1)} / {maxFingerHealth}
@@ -1793,8 +1844,8 @@ export default function App() {
                                     className="heal-item-button"
                                     type="button"
                                     onClick={useHealItem}
-                                    aria-label={`Use repair kit and restore ${REPAIR_KIT.healPercentage * 100}% of maximum health`}
-                                    title={`Restore ${REPAIR_KIT.healPercentage * 100}% of maximum health`}
+                                    aria-label={t("Use repair kit and restore {percent}% of maximum health", { percent: REPAIR_KIT.healPercentage * 100 })}
+                                    title={t("Restore {percent}% of maximum health", { percent: REPAIR_KIT.healPercentage * 100 })}
                                     disabled={
                                         fingerHealth <= 0 ||
                                         fingerHealth >= maxFingerHealth
@@ -1833,17 +1884,17 @@ export default function App() {
                         {gamePhase === "polarityIntro" && currentPolarityAttempt && (
                             <div className="start-area event-intro-screen polarity-intro">
                                 <div className="start-message polarity-intro-message">
-                                    <small className="secret-event-label polarity-secret-label">EVENT TICKET ACTIVATED</small>
-                                    <strong className="polarity-intro-title">⚫ POLARITY RUSH ⚪</strong>
-                                    <small className="polarity-rules">CLICK A BUTTON TO FLIP ITS COLOR · MATCH THE TARGET COLOR</small>
+                                    <small className="secret-event-label polarity-secret-label">{t("EVENT TICKET ACTIVATED")}</small>
+                                    <strong className="polarity-intro-title">{t("⚫ POLARITY RUSH ⚪")}</strong>
+                                    <small className="polarity-rules">{t("CLICK A BUTTON TO FLIP ITS COLOR · MATCH THE TARGET COLOR")}</small>
                                     <small className="polarity-goal">
-                                        {currentPolarityAttempt.waves} WAVES · {currentPolarityAttempt.waveDurationSeconds} SECONDS EACH · {currentPolarityTotalReward}⚡ REWARD
+                                        {t("{waves} WAVES · {time} SECONDS EACH · {reward}⚡ REWARD", { waves: currentPolarityAttempt.waves, time: currentPolarityAttempt.waveDurationSeconds, reward: currentPolarityTotalReward })}
                                     </small>
                                     <span className="event-intro-action-slot">
                                         {eventIntroTimeLeft > 0 ? (
-                                            <strong className="event-unlock-notice polarity-event-unlock-notice">YOU UNLOCKED A SECRET EVENT</strong>
+                                            <strong className="event-unlock-notice polarity-event-unlock-notice">{t("YOU UNLOCKED A SECRET EVENT")}</strong>
                                         ) : (
-                                            <button className="event-intro-action polarity-event-intro-action" type="button" onClick={startPolarityEvent}>START POLARITY RUSH</button>
+                                            <button className="event-intro-action polarity-event-intro-action" type="button" onClick={startPolarityEvent}>{t("START POLARITY RUSH")}</button>
                                         )}
                                     </span>
                                 </div>
@@ -1853,8 +1904,8 @@ export default function App() {
                         {gamePhase === "polarityEvent" && currentPolarityAttempt && (
                             <div className="polarity-event">
                                 <div className="polarity-event-header">
-                                    <strong>⚫ POLARITY RUSH ⚪</strong>
-                                    <span className={`polarity-timer ${polarityTimeLeft <= 3 ? "is-urgent" : ""}`}>{Math.ceil(polarityTimeLeft)}s</span>
+                                    <strong>{t("⚫ POLARITY RUSH ⚪")}</strong>
+                                    <span className={`polarity-timer ${polarityTimeLeft <= 3 ? "is-urgent" : ""}`}>{t("{time}s", { time: Math.ceil(polarityTimeLeft) })}</span>
                                 </div>
 
                                 <div className="polarity-timer-track">
@@ -1865,12 +1916,12 @@ export default function App() {
                                 </div>
 
                                 <div className="polarity-event-stats">
-                                    <span>{`WAVE ${polarityWave} / ${currentPolarityAttempt.waves}`}</span>
-                                    <strong>MOVES: {polarityMoves}</strong>
+                                    <span>{t("WAVE {current} / {total}", { current: polarityWave, total: currentPolarityAttempt.waves })}</span>
+                                    <strong>{t("MOVES: {count}", { count: polarityMoves })}</strong>
                                 </div>
 
                                 <strong className={`polarity-target polarity-target-${polarityTargetIsWhite ? "white" : "black"}`}>
-                                    {`MAKE THEM ALL ${polarityTargetIsWhite ? "WHITE" : "BLACK"}!`}
+                                    {t(polarityTargetIsWhite ? "MAKE THEM ALL WHITE!" : "MAKE THEM ALL BLACK!")}
                                 </strong>
 
                                 <div ref={polarityGridRef} className="polarity-rush-field">
@@ -1882,7 +1933,7 @@ export default function App() {
                                             data-polarity-index={index}
                                             onClick={() => handlePolarityButtonPress(index)}
                                             disabled={isPolarityResolving}
-                                            aria-label={`Polarity button ${index + 1}, currently ${button.isWhite ? "white" : "black"}`}
+                                            aria-label={t(button.isWhite ? "Polarity button {number}, currently white" : "Polarity button {number}, currently black", { number: index + 1 })}
                                             style={{
                                                 left: `${button.position.x}%`,
                                                 top: `${button.position.y}%`,
@@ -1893,21 +1944,21 @@ export default function App() {
                                     ))}
                                 </div>
 
-                                <p className="polarity-event-hint">CLICKING THE TARGET COLOR FLIPS IT BACK — MOVE FAST</p>
+                                <p className="polarity-event-hint">{t("CLICKING THE TARGET COLOR FLIPS IT BACK — MOVE FAST")}</p>
                             </div>
                         )}
 
                         {gamePhase === "polarityResult" && currentPolarityAttempt && (
                             <button className={`start-area polarity-result polarity-result-${polarityResult}`} type="button" onClick={leavePolarityEvent}>
                                 <span className="start-message polarity-result-message">
-                                    <small className="secret-event-label polarity-secret-label">POLARITY RUSH</small>
+                                    <small className="secret-event-label polarity-secret-label">{t("POLARITY RUSH")}</small>
                                     <strong className="polarity-intro-title">
-                                        {polarityResult === "success" ? "✅ PERFECTLY UNDECIDED" : "❌ POLARITY COLLAPSE"}
+                                        {polarityResult === "success" ? t("✅ PERFECTLY UNDECIDED") : t("❌ POLARITY COLLAPSE")}
                                     </strong>
                                     <small className="polarity-rules">
-                                        {polarityResult === "success" ? `ALL BUTTONS DESTROYED · +${currentPolarityTotalReward}⚡` : `TIME EXPIRED · TICKET ${activePolarityEventIndex + 1} USED`}
+                                        {polarityResult === "success" ? t("ALL BUTTONS DESTROYED · +{reward}⚡", { reward: currentPolarityTotalReward }) : t("TIME EXPIRED · TICKET {number} USED", { number: activePolarityEventIndex + 1 })}
                                     </small>
-                                    <small className="continue-hint">CLICK TO RETURN TO THE LAB</small>
+                                    <small className="continue-hint">{t("CLICK TO RETURN TO THE LAB")}</small>
                                 </span>
                             </button>
                         )}
@@ -1915,27 +1966,27 @@ export default function App() {
                         {gamePhase === "redLightIntro" && currentRedLightEvent && (
                             <div className="start-area event-intro-screen red-light-intro">
                                 <div className="start-message red-light-intro-message">
-                                    <small className="secret-event-label red-light-secret-label">SUSPICIOUS CLICK ACTIVITY</small>
-                                    <strong className="red-light-intro-title">🚦 HUMAN CLICK VERIFICATION</strong>
+                                    <small className="secret-event-label red-light-secret-label">{t("SUSPICIOUS CLICK ACTIVITY")}</small>
+                                    <strong className="red-light-intro-title">{t("🚦 HUMAN CLICK VERIFICATION")}</strong>
                                     <small className="red-light-trigger">
-                                        {currentRedLightEvent.requiredTotalPresses} TOTAL PRESSES DETECTED
+                                        {t("{count} TOTAL PRESSES DETECTED", { count: currentRedLightEvent.requiredTotalPresses })}
                                     </small>
                                     <small className="red-light-reason">
-                                        The chamber is starting to doubt you are human.
+                                        {t("The chamber is starting to doubt you are human.")}
                                         <br />
-                                        Honestly, so are we. Pass verification to continue.
+                                        {t("Honestly, so are we. Pass verification to continue.")}
                                     </small>
                                     <small className="red-light-rules">
-                                        CLICK ON GREEN · RED MEANS STOP · CAUGHT LOCKS YOU FOR {RED_LIGHT_EVENT.caughtDurationMs / 1000} SECONDS
+                                        {t("CLICK ON GREEN · RED MEANS STOP · CAUGHT LOCKS YOU FOR {time} SECONDS", { time: RED_LIGHT_EVENT.caughtDurationMs / 1000 })}
                                     </small>
                                     <small className="red-light-goal">
-                                        {currentRedLightEvent.targetHits} SAFE CLICKS · {RED_LIGHT_EVENT.durationSeconds} SECONDS · {currentRedLightEvent.reward}⚡ REWARD
+                                        {t("{hits} SAFE CLICKS · {time} SECONDS · {reward}⚡ REWARD", { hits: currentRedLightEvent.targetHits, time: RED_LIGHT_EVENT.durationSeconds, reward: currentRedLightEvent.reward })}
                                     </small>
                                     <span className="event-intro-action-slot">
                                         {eventIntroTimeLeft > 0 ? (
-                                            <strong className="event-unlock-notice">SECURITY CHECK INITIALIZING...</strong>
+                                            <strong className="event-unlock-notice">{t("SECURITY CHECK INITIALIZING...")}</strong>
                                         ) : (
-                                            <button className="event-intro-action" type="button" onClick={startRedLightEvent}>START VERIFICATION</button>
+                                            <button className="event-intro-action" type="button" onClick={startRedLightEvent}>{t("START VERIFICATION")}</button>
                                         )}
                                     </span>
                                 </div>
@@ -1945,12 +1996,12 @@ export default function App() {
                         {gamePhase === "redLightEvent" && currentRedLightEvent && (
                             <div className={`red-light-event red-light-event-${redLightState}`}>
                                 <div className="red-light-event-header">
-                                    <strong>🚦 HUMAN CLICK VERIFICATION</strong>
-                                    <span>{redLightTimeLeft}s</span>
+                                    <strong>{t("🚦 HUMAN CLICK VERIFICATION")}</strong>
+                                    <span>{t("{time}s", { time: redLightTimeLeft })}</span>
                                 </div>
 
                                 <div className="red-light-progress">
-                                    <span>SAFE CLICKS</span>
+                                    <span>{t("SAFE CLICKS")}</span>
                                     <strong>{redLightHits} / {currentRedLightEvent.targetHits}</strong>
                                 </div>
 
@@ -1959,19 +2010,19 @@ export default function App() {
                                     type="button"
                                     onClick={handleRedLightPress}
                                     disabled={redLightState === "caught"}
-                                    aria-label={redLightState === "red" ? "Do not press during red light" : "Press during green light"}
+                                    aria-label={redLightState === "red" ? t("Do not press during red light") : t("Press during green light")}
                                 >
-                                    {redLightState === "green" && "CLICK!"}
-                                    {redLightState === "warning" && "LAST CHANCE!"}
-                                    {redLightState === "red" && "DON'T MOVE!"}
-                                    {redLightState === "caught" && "CAUGHT!"}
+                                    {redLightState === "green" && t("CLICK!")}
+                                    {redLightState === "warning" && t("LAST CHANCE!")}
+                                    {redLightState === "red" && t("DON'T MOVE!")}
+                                    {redLightState === "caught" && t("CAUGHT!")}
                                 </button>
 
                                 <p className="red-light-status">
-                                    {redLightState === "green" && "GREEN LIGHT — GO!"}
-                                    {redLightState === "warning" && "WARNING — RED LIGHT INCOMING!"}
-                                    {redLightState === "red" && "RED LIGHT — HANDS OFF!"}
-                                    {redLightState === "caught" && `INPUT LOCKED FOR ${RED_LIGHT_EVENT.caughtDurationMs / 1000} SECONDS`}
+                                    {redLightState === "green" && t("GREEN LIGHT — GO!")}
+                                    {redLightState === "warning" && t("WARNING — RED LIGHT INCOMING!")}
+                                    {redLightState === "red" && t("RED LIGHT — HANDS OFF!")}
+                                    {redLightState === "caught" && t("INPUT LOCKED FOR {time} SECONDS", { time: RED_LIGHT_EVENT.caughtDurationMs / 1000 })}
                                 </p>
                             </div>
                         )}
@@ -1979,14 +2030,14 @@ export default function App() {
                         {gamePhase === "redLightResult" && currentRedLightEvent && (
                             <button className={`start-area red-light-result red-light-result-${redLightResult}`} type="button" onClick={() => startNormalRun()}>
                                 <span className="start-message red-light-result-message">
-                                    <small className="secret-event-label red-light-secret-label">SECRET EVENT</small>
+                                    <small className="secret-event-label red-light-secret-label">{t("SECRET EVENT")}</small>
                                     <strong className="red-light-intro-title">
-                                        {redLightResult === "success" ? "✅ HUMAN ENOUGH" : "❌ BOT BEHAVIOR DETECTED"}
+                                        {redLightResult === "success" ? t("✅ HUMAN ENOUGH") : t("❌ BOT BEHAVIOR DETECTED")}
                                     </strong>
                                     <small className="red-light-rules">
-                                        {redLightResult === "success" ? `VERIFICATION PASSED · +${currentRedLightEvent.reward}⚡` : `TIME EXPIRED · ${redLightHits} / ${currentRedLightEvent.targetHits} SAFE CLICKS`}
+                                        {redLightResult === "success" ? t("VERIFICATION PASSED · +{reward}⚡", { reward: currentRedLightEvent.reward }) : t("TIME EXPIRED · {hits} / {target} SAFE CLICKS", { hits: redLightHits, target: currentRedLightEvent.targetHits })}
                                     </small>
-                                    <small className="continue-hint">CLICK TO START THE NEXT RUN</small>
+                                    <small className="continue-hint">{t("CLICK TO START THE NEXT RUN")}</small>
                                 </span>
                             </button>
                         )}
@@ -1994,16 +2045,16 @@ export default function App() {
                         {!isFingerExhausted && gamePhase === "goldenRushIntro" && (
                             <div className="start-area event-intro-screen golden-rush-intro">
                                 <div className="start-message golden-rush-intro-message">
-                                    <small className="secret-event-label">SECRET EVENT</small>
-                                    <strong className="golden-rush-intro-title">✨ GOLDEN RUSH ✨</strong>
+                                    <small className="secret-event-label">{t("SECRET EVENT")}</small>
+                                    <strong className="golden-rush-intro-title">{t("✨ GOLDEN RUSH ✨")}</strong>
                                     <small className="golden-rush-rules">
-                                        ONE HIT · DOUBLE ENERGY · {GOLDEN_RUSH.durationSeconds} SECONDS
+                                        {t("ONE HIT · DOUBLE ENERGY · {time} SECONDS", { time: GOLDEN_RUSH.durationSeconds })}
                                     </small>
                                     <span className="event-intro-action-slot">
                                         {eventIntroTimeLeft > 0 ? (
-                                            <strong className="event-unlock-notice golden-event-unlock-notice">YOU UNLOCKED A SECRET EVENT</strong>
+                                            <strong className="event-unlock-notice golden-event-unlock-notice">{t("YOU UNLOCKED A SECRET EVENT")}</strong>
                                         ) : (
-                                            <button className="event-intro-action golden-event-intro-action" type="button" onClick={startGoldenRush}>START GOLDEN RUSH</button>
+                                            <button className="event-intro-action golden-event-intro-action" type="button" onClick={startGoldenRush}>{t("START GOLDEN RUSH")}</button>
                                         )}
                                     </span>
                                 </div>
@@ -2013,8 +2064,8 @@ export default function App() {
                         {gamePhase === "goldenRush" && (
                             <>
                                 <div className="golden-rush-banner">
-                                    <strong>✨ GOLDEN RUSH ✨</strong>
-                                    <span>{goldenRushTimeLeft}s</span>
+                                    <strong>{t("✨ GOLDEN RUSH ✨")}</strong>
+                                    <span>{t("{time}s", { time: goldenRushTimeLeft })}</span>
                                 </div>
 
                                 <div className="small-button-phase golden-button-phase">
@@ -2031,7 +2082,7 @@ export default function App() {
                                                 className={`small-button golden-small-button ${goldenButton.isBreaking ? "is-breaking" : ""}`}
                                                 type="button"
                                                 disabled={goldenButton.isBreaking}
-                                                aria-label="GOLDEN BUTTON"
+                                                aria-label={t("GOLDEN BUTTON")}
                                                 onPointerDown={(event) => {
                                                     if (event.button === 0) {
                                                         event.currentTarget.setPointerCapture(event.pointerId);
@@ -2080,9 +2131,7 @@ export default function App() {
                                     <span className="start-message">
                                         {stageMessage}
 
-                                        <small className="continue-hint">
-                                            CLICK TO FACE THE NEXT MISTAKE
-                                        </small>
+                                        <small className="continue-hint">{t("CLICK TO FACE THE NEXT MISTAKE")}</small>
                                     </span>
                                 </button>
                             )}
@@ -2095,35 +2144,27 @@ export default function App() {
                                 aria-labelledby="demo-ending-title"
                             >
                                 <div className="ending-card">
-                                    <small className="ending-label">DEMO COMPLETE</small>
+                                    <small className="ending-label">{t("DEMO COMPLETE")}</small>
 
-                                    <strong id="demo-ending-title" className="ending-title">
-                                        🏆 YOU DEFEATED THE VOID EMPEROR
-                                    </strong>
+                                    <strong id="demo-ending-title" className="ending-title">{t("🏆 YOU DEFEATED THE VOID EMPEROR")}</strong>
 
-                                    <p className="ending-copy">
-                                        THE CHAMBER DOORS ARE OPEN. YOU BEAT THE DEMO. YOU ARE FINALLY FREE.
-                                    </p>
+                                    <p className="ending-copy">{t("THE CHAMBER DOORS ARE OPEN. YOU BEAT THE DEMO. YOU ARE FINALLY FREE.")}</p>
 
-                                    <p className="ending-joke">
-                                        Unfortunately, your finger has already developed a clicking problem.
-                                    </p>
+                                    <p className="ending-joke">{t("Unfortunately, your finger has already developed a clicking problem.")}</p>
 
                                     <p className="ending-credit">
-                                        Built by{" "}
+                                        {t("Built by")}{" "}
                                         <a
                                             href="https://github.com/Khalil-Abboud"
                                             target="_blank"
                                             rel="noreferrer"
-                                        >
-                                            Khalil Abboud
-                                        </a>
+                                        >{t("Khalil Abboud")}</a>
                                     </p>
 
                                     <div className="ending-action-slot">
                                         {endingChoiceTimeLeft > 0 ? (
                                             <strong className="ending-wait">
-                                                FREEDOM PROCESSING... {endingChoiceTimeLeft}
+                                                {t("FREEDOM PROCESSING... {time}", { time: endingChoiceTimeLeft })}
                                             </strong>
                                         ) : (
                                             <div className="ending-actions">
@@ -2131,17 +2172,13 @@ export default function App() {
                                                     className="ending-leave-button"
                                                     type="button"
                                                     onClick={leaveDemoEnding}
-                                                >
-                                                    LEAVE THE CHAMBER
-                                                </button>
+                                                >{t("LEAVE THE CHAMBER")}</button>
 
                                                 <button
                                                     className="ending-endless-button"
                                                     type="button"
                                                     onClick={continueToEndlessMode}
-                                                >
-                                                    KEEP CLICKING — ENDLESS MODE
-                                                </button>
+                                                >{t("KEEP CLICKING — ENDLESS MODE")}</button>
                                             </div>
                                         )}
                                     </div>
@@ -2181,7 +2218,7 @@ export default function App() {
                                                     "is-breaking" : ""}`}
                                                 type="button"
                                                 disabled={smallButton.isBreaking}
-                                                aria-label={buttonType.name}
+                                                aria-label={t(buttonType.name)}
                                                 onPointerDown={(event) => {
                                                     if (event.button === 0) {
                                                         event.currentTarget.setPointerCapture(
@@ -2210,7 +2247,7 @@ export default function App() {
                             <>
                                 <div className="meter durability-meter">
                                     <div className="meter-label">
-                                        <span>{currentButton.name}</span>
+                                        <span>{t(currentButton.name)}</span>
 
                                         <strong>
                                             {Math.ceil(buttonDurability)} / {currentButton.durability}
@@ -2255,7 +2292,7 @@ export default function App() {
                                     }}
                                     disabled={isButtonBreaking}
                                 >
-                                    {isButtonBreaking ? "CRACK!" : currentButton.buttonText}
+                                    {isButtonBreaking ? t("CRACK!") : t(currentButton.buttonText)}
                                 </button>
                             </>
                         )}
@@ -2263,6 +2300,7 @@ export default function App() {
 
                     <RunData
                         className="compact-run-data"
+                        t={t}
                         currentScore={runScore}
                         bestScore={bestScore}
                         totalPresses={totalManualPresses}
@@ -2270,16 +2308,16 @@ export default function App() {
 
                     <div className="upgrades">
                         <section className="upgrade">
-                            <h2>⏱️ BUTTON SPAWN RATE</h2>
+                            <h2>{t("⏱️ BUTTON SPAWN RATE")}</h2>
 
                             <p>
-                                {`Level: ${spawnSpeedLevel} / ${spawnSpeedLevels.length - 1}`}
+                                {t("Level: {level} / {max}", { level: spawnSpeedLevel, max: spawnSpeedLevels.length - 1 })}
                             </p>
 
                             <p>
                                 {isSpawnSpeedMax
-                                    ? `+${currentSpawnSpeedBonus}% spawn rate`
-                                    : `Next: +${nextSpawnSpeedBonus}% spawn rate`}
+                                    ? t("+{bonus}% spawn rate", { bonus: currentSpawnSpeedBonus })
+                                    : t("Next: +{bonus}% spawn rate", { bonus: nextSpawnSpeedBonus })}
                             </p>
 
                             <button
@@ -2292,22 +2330,22 @@ export default function App() {
                                 }
                             >
                                 {isSpawnSpeedMax
-                                    ? "MAX LEVEL"
-                                    : `UPGRADE — ${spawnSpeedUpgradeCost}⚡`}
+                                    ? t("MAX LEVEL")
+                                    : t("UPGRADE — {cost}⚡", { cost: spawnSpeedUpgradeCost })}
                             </button>
                         </section>
 
                         <section className="upgrade chain-lightning-upgrade">
-                            <h2>⚡ CHAIN LIGHTNING</h2>
+                            <h2>{t("⚡ CHAIN LIGHTNING")}</h2>
 
                             <p>
-                                {`Level: ${chainLightningLevel} / ${chainLightningLevels.length - 1}`}
+                                {t("Level: {level} / {max}", { level: chainLightningLevel, max: chainLightningLevels.length - 1 })}
                             </p>
 
                             <p>
                                 {isChainLightningMax
-                                    ? `${currentChainLightning.damageMultipliers.length} jumps · ${currentChainLightning.damageMultipliers.map((multiplier) => `${multiplier * 100}%`).join(" → ")} damage`
-                                    : `Next: Jump ${nextChainJumpIndex + 1} deals ${nextChainJumpDamageMultiplier * 100}% damage`}
+                                    ? t("{count} jumps · {damage} damage", { count: currentChainLightning.damageMultipliers.length, damage: currentChainLightning.damageMultipliers.map((multiplier) => `${multiplier * 100}%`).join(" → ") })
+                                    : t("Next: Jump {jump} deals {damage}% damage", { jump: nextChainJumpIndex + 1, damage: nextChainJumpDamageMultiplier * 100 })}
                             </p>
 
                             <button
@@ -2320,17 +2358,17 @@ export default function App() {
                                 }
                             >
                                 {isChainLightningMax
-                                    ? "MAX LEVEL"
+                                    ? t("MAX LEVEL")
                                     : chainLightningLevel === 0
-                                        ? `UNLOCK — ${chainLightningUpgradeCost}⚡`
-                                        : `UPGRADE — ${chainLightningUpgradeCost}⚡`}
+                                        ? t("UNLOCK — {cost}⚡", { cost: chainLightningUpgradeCost })
+                                        : t("UPGRADE — {cost}⚡", { cost: chainLightningUpgradeCost })}
                             </button>
                         </section>
 
                         <section className="upgrade auto-finger-upgrade">
-                            <h2>🖱️ AUTO FINGER</h2>
+                            <h2>{t("🖱️ AUTO FINGER")}</h2>
 
-                            <p>{`Level: ${autoFingerLevel} / ${autoFingerLevels.length - 1}`}</p>
+                            <p>{t("Level: {level} / {max}", { level: autoFingerLevel, max: autoFingerLevels.length - 1 })}</p>
 
                             <p>{autoFingerDescription}</p>
 
@@ -2340,17 +2378,17 @@ export default function App() {
                                 disabled={isRunActive || isAutoFingerMax || energy < autoFingerUpgradeCost}
                             >
                                 {isAutoFingerMax
-                                    ? "MAX LEVEL"
+                                    ? t("MAX LEVEL")
                                     : autoFingerLevel === 0
-                                        ? `UNLOCK — ${autoFingerUpgradeCost}⚡`
-                                        : `UPGRADE — ${autoFingerUpgradeCost}⚡`}
+                                        ? t("UNLOCK — {cost}⚡", { cost: autoFingerUpgradeCost })
+                                        : t("UPGRADE — {cost}⚡", { cost: autoFingerUpgradeCost })}
                             </button>
                         </section>
 
                         <section className="upgrade fireball-upgrade">
-                            <h2>🔥 FIREBALL DROP</h2>
+                            <h2>{t("🔥 FIREBALL DROP")}</h2>
 
-                            <p>{`Level: ${fireballLevel} / ${fireballLevels.length - 1}`}</p>
+                            <p>{t("Level: {level} / {max}", { level: fireballLevel, max: fireballLevels.length - 1 })}</p>
 
                             <p>{fireballDescription}</p>
 
@@ -2360,22 +2398,22 @@ export default function App() {
                                 disabled={isRunActive || isFireballMax || energy < fireballUpgradeCost}
                             >
                                 {isFireballMax
-                                    ? "MAX LEVEL"
+                                    ? t("MAX LEVEL")
                                     : fireballLevel === 0
-                                        ? `UNLOCK — ${fireballUpgradeCost}⚡`
-                                        : `UPGRADE — ${fireballUpgradeCost}⚡`}
+                                        ? t("UNLOCK — {cost}⚡", { cost: fireballUpgradeCost })
+                                        : t("UPGRADE — {cost}⚡", { cost: fireballUpgradeCost })}
                             </button>
                         </section>
 
                         <section className="upgrade">
-                            <h2>💚 HEALING BUTTONS</h2>
+                            <h2>{t("💚 HEALING BUTTONS")}</h2>
 
-                            <p>{`Level: ${healingButtonLevel} / ${healingButtonLevels.length - 1}`}</p>
+                            <p>{t("Level: {level} / {max}", { level: healingButtonLevel, max: healingButtonLevels.length - 1 })}</p>
 
                             <p>
                                 {isHealingButtonMax
-                                    ? `${currentHealingButton.spawnChance * 100}% spawn chance · +${healingButtonHealAmount} HP`
-                                    : `Next: ${nextHealingButton.spawnChance * 100}% spawn chance · +${healingButtonHealAmount} HP`}
+                                    ? t("{chance}% spawn chance · +{health} HP", { chance: currentHealingButton.spawnChance * 100, health: healingButtonHealAmount })
+                                    : t("Next: {chance}% spawn chance · +{health} HP", { chance: nextHealingButton.spawnChance * 100, health: healingButtonHealAmount })}
                             </p>
 
                             <button
@@ -2384,19 +2422,19 @@ export default function App() {
                                 disabled={isRunActive || isHealingButtonMax || energy < healingButtonUpgradeCost}
                             >
                                 {isHealingButtonMax
-                                    ? "MAX LEVEL"
+                                    ? t("MAX LEVEL")
                                     : healingButtonLevel === 0
-                                        ? `UNLOCK — ${healingButtonUpgradeCost}⚡`
-                                        : `UPGRADE — ${healingButtonUpgradeCost}⚡`}
+                                        ? t("UNLOCK — {cost}⚡", { cost: healingButtonUpgradeCost })
+                                        : t("UPGRADE — {cost}⚡", { cost: healingButtonUpgradeCost })}
                             </button>
                         </section>
 
                         <section className="upgrade">
-                            <h2>💪 PRESS POWER</h2>
+                            <h2>{t("💪 PRESS POWER")}</h2>
 
-                            <p>Level: {powerLevel}</p>
+                            <p>{t("Level: {level}", { level: powerLevel })}</p>
                             <p>
-                                {`Next: ${pressPower} → ${pressPower + POWER_UPGRADE.powerPerLevel} damage`}
+                                {t("Next: {current} → {next} damage", { current: pressPower, next: pressPower + POWER_UPGRADE.powerPerLevel })}
                             </p>
 
                             <button
@@ -2407,16 +2445,16 @@ export default function App() {
                                     energy < powerUpgradeCost
                                 }
                             >
-                                UPGRADE — {powerUpgradeCost}⚡
+                                {t("UPGRADE — {cost}⚡", { cost: powerUpgradeCost })}
                             </button>
                         </section>
 
                         <section className="upgrade">
-                            <h2>❤️ FINGER HEALTH</h2>
+                            <h2>{t("❤️ FINGER HEALTH")}</h2>
 
-                            <p>Level: {healthLevel}</p>
+                            <p>{t("Level: {level}", { level: healthLevel })}</p>
                             <p>
-                                {`Next: ${maxFingerHealth} → ${maxFingerHealth + HEALTH_UPGRADE.healthPerLevel} max health`}
+                                {t("Next: {current} → {next} max health", { current: maxFingerHealth, next: maxFingerHealth + HEALTH_UPGRADE.healthPerLevel })}
                             </p>
 
                             <button
@@ -2427,17 +2465,17 @@ export default function App() {
                                     energy < healthUpgradeCost
                                 }
                             >
-                                UPGRADE — {healthUpgradeCost}⚡
+                                {t("UPGRADE — {cost}⚡", { cost: healthUpgradeCost })}
                             </button>
                         </section>
 
                         <section className="upgrade polarity-upgrade">
-                            <h2>⚫ POLARITY RUSH EVENT ⚪</h2>
-                            <p>{`Tickets used: ${polarityEventsPlayed} / ${POLARITY_EVENT.attempts.length}`}</p>
+                            <h2>{t("⚫ POLARITY RUSH EVENT ⚪")}</h2>
+                            <p>{t("Tickets used: {used} / {total}", { used: polarityEventsPlayed, total: POLARITY_EVENT.attempts.length })}</p>
                             <p>
                                 {isPolaritySoldOut
-                                    ? `${POLARITY_EVENT.attempts.length} event tickets completed`
-                                    : `Next: Pay ${nextPolarityAttempt.cost}⚡ · Win ${nextPolarityTotalReward}⚡`}
+                                    ? t("{total} event tickets completed", { total: POLARITY_EVENT.attempts.length })
+                                    : t("Next: Pay {cost}⚡ · Win {reward}⚡", { cost: nextPolarityAttempt.cost, reward: nextPolarityTotalReward })}
                             </p>
 
                             <button
@@ -2445,15 +2483,15 @@ export default function App() {
                                 onClick={buyPolarityEvent}
                                 disabled={isRunActive || isEventScreenOpen || isPolaritySoldOut || energy < (nextPolarityAttempt?.cost ?? 0)}
                             >
-                                {isPolaritySoldOut ? "SOLD OUT" : `BUY EVENT TICKET — ${nextPolarityAttempt.cost}⚡`}
+                                {isPolaritySoldOut ? t("SOLD OUT") : t("BUY EVENT TICKET — {cost}⚡", { cost: nextPolarityAttempt.cost })}
                             </button>
                         </section>
 
                         <section className="upgrade">
-                            <h2>🩹 FINGER REPAIR KIT</h2>
-                            <p>Owned: {healItemCount}</p>
+                            <h2>{t("🩹 FINGER REPAIR KIT")}</h2>
+                            <p>{t("Owned: {count}", { count: healItemCount })}</p>
                             <p>
-                                {`Next: +1 kit (restores ${REPAIR_KIT.healPercentage * 100}% HP)`}
+                                {t("Next: +1 kit (restores {percent}% HP)", { percent: REPAIR_KIT.healPercentage * 100 })}
                             </p>
 
                             <button
@@ -2464,7 +2502,7 @@ export default function App() {
                                     energy < healItemCost
                                 }
                             >
-                                BUY — {healItemCost}⚡
+                                {t("BUY — {cost}⚡", { cost: healItemCost })}
                             </button>
                         </section>
                     </div>
