@@ -123,16 +123,21 @@ export default function App() {
 
     if (!language) {
         return (
-            <main className="intro-screen" aria-labelledby="language-title">
+            <main className="intro-screen language-screen" aria-labelledby="language-title language-subtitle">
                 <section className="intro-panel language-panel">
-                    <h1 id="language-title" className="intro-title">Choose your language</h1>
-                    <p className="language-subtitle" lang="ar" dir="rtl">اختر لغة اللعبة</p>
+                    <div className="language-emblem" aria-hidden="true">
+                        <span />
+                    </div>
+                    <div className="language-heading">
+                        <h1 id="language-title" className="intro-title" lang="en">Choose your language</h1>
+                        <p id="language-subtitle" lang="ar" dir="rtl">اختر لغة اللعبة</p>
+                    </div>
                     <div className="language-options">
-                        <button className="intro-enter-button" type="button" lang="en"
+                        <button className="language-key" type="button" lang="en"
                             onClick={() => chooseLanguage("en")}>
                             English
                         </button>
-                        <button className="intro-enter-button" type="button" lang="ar" dir="rtl"
+                        <button className="language-key" type="button" lang="ar" dir="rtl"
                             onClick={() => chooseLanguage("ar")}>
                             العربية
                         </button>
@@ -1673,7 +1678,7 @@ function Game({ language }) {
         <main className="game" dir={isArabic ? "rtl" : "ltr"}>
             <audio
                 ref={musicRef}
-                src="/audio/monkeys-spinning-monkeys.mp3"
+                src={`${import.meta.env.BASE_URL}audio/monkeys-spinning-monkeys.mp3`}
                 muted={isMusicMuted}
                 loop
                 preload="auto"
